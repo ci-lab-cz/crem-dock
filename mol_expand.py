@@ -57,6 +57,8 @@ def main():
                         help='ID of a ligand in the input file. All other atoms will be considered as protein side.')
     parser.add_argument('-o', '--output', metavar='output.smi', required=True, type=str,
                         help='output file with SMILES of newly generated molecules.')
+    parser.add_argument('-l', '--lig_output', metavar='output.mol', required=False, default=None, type=str,
+                        help='output file with 3D coordinates of a parent ligand.')
     parser.add_argument('-t', '--threshold', metavar='NUMERIC', required=False, default=2, type=float,
                         help='minimum distance from hydrogen atom to protein atoms to protect the hydrogen '
                              'from replacement.')
@@ -70,6 +72,9 @@ def main():
     with open(args.output, 'wt') as f:
         for i, smi in enumerate(new_smi, 1):
             f.write(f'{smi}\t{args.lig_id}-{str(i).zfill(5)}\n')
+
+    if args.lig_output:
+        Chem.MolToMolFile(lig, args.lig_output)
 
 
 if __name__ == '__main__':
