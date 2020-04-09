@@ -4,6 +4,7 @@ import argparse
 import glob
 import os
 import re
+import sys
 import numpy as np
 from rdkit import Chem
 from rdkit.Chem import AllChem
@@ -13,7 +14,13 @@ def read_pdbqt(fname, mol):
     with open(fname) as f:
         pdb_block = f.read().split('MODEL ')[1]
         m = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-        m = AllChem.AssignBondOrdersFromTemplate(mol, m)
+        if m:
+            try:
+                m = AllChem.AssignBondOrdersFromTemplate(mol, m)
+            except Exception as e:
+                sys.stdout.write('failed to AssignBondOrdersFromTemplate')
+                sys.stdout.write(str(e))
+                m = None
     with open(fname) as f:
         f.readline()
         line = f.readline()
@@ -33,8 +40,8 @@ def get_rmsd(mol, ref):
     ref_xyz = ref.GetConformer().GetPositions()
     rms = float('inf')
     for ids in mol.GetSubstructMatches(ref):
-        print(ids)
         res = np.sqrt(np.mean(np.sum((mol_xyz[ids, ] - ref_xyz) ** 2, axis=1)))
+        print(ids, res)
         if res < rms:
             rms = res
         # (mol_xyz[ids,:] - ref_xyz) ** 2
@@ -68,6 +75,9 @@ def main():
         for fname in glob.glob(os.path.join(args.dock_dir, '*' + args.suffix)):
             mol_name = re.sub('^.*/(.*)' + args.suffix, '\\1', fname)
             mol, score = read_pdbqt(fname, dock_mols[mol_name])
+            if mol is None:
+                print(f'{mol_name} cannot be parsed from PDBQT file')
+                continue
             rms = get_rmsd(mol, lig)
             f.write('\t'.join(map(str, (mol_name, score, rms))) + '\n')
 
