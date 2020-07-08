@@ -96,11 +96,16 @@ def convert_smi_to_pdb2(smi_data, output_dname):
         Smi2PDB.save_to_pdb(smi, os.path.join(output_dname, mol_id + '.pdb'))
 
 
-def prep_ligands(dname, python_path, vina_script_dir):
-    for fname in glob.glob(os.path.join(dname, '*.pdb')):
-        print(fname)
-        Docking.prepare_ligand(fname, fname.rsplit('.', 1)[0] + '.pdbqt', python_path,
-                               vina_script_dir + 'prepare_ligand4.py')
+def prep_ligands(dname, python_path, vina_script_dir, ncpu):
+
+    def supply_lig_prep(dname, python_path, vina_script_dir):
+        for fname in glob.glob(os.path.join(dname, '*.pdb')):
+            yield fname, fname.rsplit('.', 1)[0] + '.pdbqt', python_path, vina_script_dir + 'prepare_ligand4.py'
+
+    Parallel(n_jobs=ncpu, verbose=8)(delayed(Docking.prepare_ligand)(i_fname, o_fname, python_path, vina_script)
+                                     for i_fname, o_fname, python_path, vina_script in supply_lig_prep(dname,
+                                                                                                       python_path,
+                                                                                                       vina_script_dir))
 
 
 def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu):
@@ -364,7 +369,7 @@ def make_iteration(input_smi_fname, output_smi_fname, iteration, target_fname_pd
             shutil.copy(os.path.join(docking_dir, file), os.path.join(dname, file))
     else:
         convert_smi_to_pdb2(smi_data, dname)
-        prep_ligands(dname, python_path, vina_script_dir)
+        prep_ligands(dname, python_path, vina_script_dir, ncpu)
         dock_ligands(dname, target_fname_pdbqt, protein_setup, vina_path, ncpu)
 
     mol_scores = get_mol_scores(dname)
