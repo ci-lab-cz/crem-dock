@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import os
 from rdkit import Chem
 from rdkit.Chem import AllChem
 import numpy as np
@@ -56,7 +57,8 @@ def main():
     parser.add_argument('-i', '--input', metavar='input.pdb', required=True, type=str,
                         help='PDB file with a protein-ligand complex.')
     parser.add_argument('-s', '--lig_smi', metavar='SMILES', required=True, type=str,
-                        help='SMILES of a ligand to correctly parse its connectivity in PDB.')
+                        help='file with SMILES or a SMILES string of a ligand to correctly parse its '
+                             'connectivity in PDB.')
     parser.add_argument('-d', '--db', metavar='fragments.db', required=True, type=str,
                         help='SQLite DB file with fragment replacements.')
     parser.add_argument('-g', '--lig_id', metavar='STRING', required=True, type=str,
@@ -70,7 +72,10 @@ def main():
                              'from replacement.')
 
     args = parser.parse_args()
-    lig_smi = open(args.lig_smi).readline().strip().split()[0]
+    if os.path.isfile(args.lig_smi):
+        lig_smi = open(args.lig_smi).readline().strip().split()[0]
+    else:
+        lig_smi = args.lig_smi
     prot, lig = get_mols(args.input, args.lig_id, lig_smi)
     protected_ids = get_protected_ids(prot, lig, args.threshold)
     new_smi = expand_mol(lig, args.db, protected_ids)
