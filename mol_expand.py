@@ -6,6 +6,7 @@ from rdkit.Chem import AllChem
 import numpy as np
 from scipy.spatial.distance import cdist
 from crem.crem import grow_mol
+from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 
 
 def get_mols(pdb_fname, lig_id, lig_smi):
@@ -35,13 +36,16 @@ def get_protected_ids(prot, lig, threshold):
 
 
 def expand_mol(lig, db_fname, protected_ids):
-    new_smi = tuple(grow_mol(lig,
-                             db_name=db_fname,
-                             min_atoms=1,
-                             max_atoms=10,
-                             protected_ids=protected_ids,
-                             return_rxn=False,
-                             max_replacements=None))
+    stereo_opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
+    new_smi = []
+    for new in grow_mol(lig, db_name=db_fname, min_atoms=1, max_atoms=10, protected_ids=protected_ids,
+                        return_rxn=False, return_mol=True, max_replacements=None):
+        for b in new[1].GetBonds():
+            if b.GetStereo() == Chem.rdchem.BondStereo.STEREOANY:
+                b.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
+        isomers = tuple(EnumerateStereoisomers(new[1], options=stereo_opts))
+        for isomer in isomers:
+            new_smi.append(Chem.MolToSmiles(isomer, isomericSmiles=True))
     return new_smi
 
 
