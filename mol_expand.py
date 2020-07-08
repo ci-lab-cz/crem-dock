@@ -14,6 +14,8 @@ def get_mols(pdb_fname, lig_id, lig_smi):
     prot_lines = []
     with open(pdb_fname) as f:
         for line in f:
+            if line[17:20] == 'HOH':
+                continue
             if (line.startswith('ATOM') or line.startswith('HETATM')) and line[17:20] == lig_id:
                 lig_lines.append(line)
             else:
