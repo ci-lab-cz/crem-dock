@@ -53,7 +53,7 @@ def expand_mol(lig, db_fname, protected_ids, ncpu):
                 b.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
         isomers = tuple(EnumerateStereoisomers(new[1], options=stereo_opts))
         for isomer in isomers:
-            new_smi.append(Chem.MolToSmiles(isomer, isomericSmiles=True))
+            new_smi.append(Chem.MolToSmiles(Chem.RemoveHs(isomer), isomericSmiles=True))
     return new_smi
 
 
