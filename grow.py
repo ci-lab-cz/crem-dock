@@ -225,7 +225,7 @@ def get_protected_ids(best_conf_H, protein_file, dist_threshold):
     return sorted(ids)
 
 
-def grow_mols(fnames, target_fname_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
+def grow_mols(fnames, target_fname_pdbqt, h_dist_threshold=2, **kwargs):
 
     new_mols = dict()
     for fname in fnames:
@@ -234,14 +234,14 @@ def grow_mols(fnames, target_fname_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
         best_conf_H = __get_first_mol_from_pdbqt(fname)
         protected_ids = get_protected_ids(best_conf_H, target_fname_pdbqt, h_dist_threshold)
 
-        for smi in grow_mol(best_conf_H, protected_ids=protected_ids, return_rxn=False, ncores=ncpu, **kwargs):
+        for smi in grow_mol(best_conf_H, protected_ids=protected_ids, return_rxn=False, **kwargs):
             if smi not in new_mols:
                 new_mols[smi] = parent_id
 
     return sorted(new_mols.items(), key=operator.itemgetter(1))
 
 
-def grow_mols_deep(all_clust, dname, target_fname_pdbqt, ntop, h_dist_threshold=2, ncpu=1, **kwargs):
+def grow_mols_deep(all_clust, dname, target_fname_pdbqt, ntop, h_dist_threshold=2, **kwargs):
 
     new_mols = dict()
     for number, clust in enumerate(all_clust):
@@ -253,7 +253,7 @@ def grow_mols_deep(all_clust, dname, target_fname_pdbqt, ntop, h_dist_threshold=
             fn = os.path.join(dname, mol_id + '_dock.pdbqt')
             best_conf_H = __get_first_mol_from_pdbqt(fn)
             protected_ids = get_protected_ids(best_conf_H, target_fname_pdbqt, h_dist_threshold)
-            new_molecules = list(grow_mol(best_conf_H, protected_ids=protected_ids, return_rxn=False, ncores=ncpu, **kwargs))
+            new_molecules = list(grow_mol(best_conf_H, protected_ids=protected_ids, return_rxn=False, **kwargs))
             # print(new_molecules)
             if new_molecules:
                 n_selected += 1
@@ -325,34 +325,34 @@ def insert_starting_smi_to_db(smi_fname, conn):
         insert_db(conn, data)
 
 
-def selection_grow_greedy(mol_scores, smi_data, ntop, mw, target_fname_pdbqt, dname, ncpu=1, **kwargs):
+def selection_grow_greedy(mol_scores, smi_data, ntop, mw, target_fname_pdbqt, dname, **kwargs):
     selected_mols = select_mols(mol_scores, smi_data, ntop, mw)
     res = None
     if selected_mols:
         selected_mol_fnames = [os.path.join(dname, mol_id + '_dock.pdbqt') for mol_id in selected_mols]
-        res = grow_mols(selected_mol_fnames, target_fname_pdbqt, ncpu=ncpu, **kwargs)
+        res = grow_mols(selected_mol_fnames, target_fname_pdbqt, **kwargs)
     return res
 
 
-def selection_grow_clust(input_smi_fname, index_tanimoto, mol_scores, ntop, mw, target_fname_pdbqt, dname, ncpu=1, **kwargs):
+def selection_grow_clust(input_smi_fname, index_tanimoto, mol_scores, ntop, mw, target_fname_pdbqt, dname, **kwargs):
     d = get_simple_dict(input_smi_fname)
     clusters = gen_cluster_subset_algButina(input_smi_fname, index_tanimoto, mol_scores)
     selected_mols = select_mols_from_clust(clusters, d, ntop, mw)
     res = None
     if selected_mols:
         selected_mol_fnames = [os.path.join(dname, mol_id + '_dock.pdbqt') for mol_id in selected_mols]
-        res = grow_mols(selected_mol_fnames, target_fname_pdbqt, ncpu, **kwargs)
+        res = grow_mols(selected_mol_fnames, target_fname_pdbqt, **kwargs)
     return res
 
 
 def selection_grow_clust_deep(input_smi_fname, index_tanimoto, mol_scores, dname, target_fname_pdbqt, ntop,
-                              mw, ncpu, **kwargs):
+                              mw, **kwargs):
     d = get_simple_dict(input_smi_fname)
     clusters = gen_cluster_subset_algButina(input_smi_fname, index_tanimoto, mol_scores)
     sorted_clust = select_clust(clusters, d, mw)
     res = None
     if sorted_clust:
-        res = grow_mols_deep(sorted_clust, dname, target_fname_pdbqt, ntop, ncpu, **kwargs)
+        res = grow_mols_deep(sorted_clust, dname, target_fname_pdbqt, ntop, **kwargs)
     return res
 
 
@@ -377,15 +377,15 @@ def make_iteration(input_smi_fname, output_smi_fname, iteration, target_fname_pd
 
     if alg_type == 1:
         res = selection_grow_greedy(mol_scores=mol_scores, smi_data=smi_data, ntop=ntop, mw=mw,
-                                    target_fname_pdbqt=target_fname_pdbqt, dname=dname, ncpu=ncpu, **kwargs)
+                                    target_fname_pdbqt=target_fname_pdbqt, dname=dname, ncores=ncpu, **kwargs)
     elif alg_type == 2:
         res = selection_grow_clust_deep(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
                                         mol_scores=mol_scores, dname=dname, mw=mw,
-                                        target_fname_pdbqt=target_fname_pdbqt, ntop=ntop, ncpu=ncpu, **kwargs)
+                                        target_fname_pdbqt=target_fname_pdbqt, ntop=ntop, nncores=ncpu, **kwargs)
     elif alg_type == 3:
         res = selection_grow_clust(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
                                    mol_scores=mol_scores, ntop=ntop, mw=mw, target_fname_pdbqt=target_fname_pdbqt,
-                                   dname=dname, ncpu=ncpu, **kwargs)
+                                   dname=dname, ncores=ncpu, **kwargs)
     else:
         res = []
 
