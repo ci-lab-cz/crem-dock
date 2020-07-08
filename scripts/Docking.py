@@ -1,3 +1,6 @@
+import os
+import glob
+import re
 from os import system
 from rdkit import Chem
 
@@ -12,6 +15,22 @@ from rdkit import Chem
 #
 #     def dock_ligands(self, dname, target_pdbqt, target_setup, ncpu):
 #         pass
+
+
+def get_mol_scores(dname, const_suffix="_dock.pdbqt"):
+    """
+    Extract docking scores from pdbqt files matching the supplied suffix from the given directory
+    :param dname: directory with pdbqt files
+    :param const_suffix: constant suffix to select pdbqt files
+    :return: dict {mol_id: score}, where mol_id is a variable part of pdbqt file names
+    """
+    d = {}
+    for fname in glob.glob(os.path.join(dname, '*' + const_suffix)):
+        with open(fname) as f:
+            score = float(f.read().split()[5])
+        d[re.sub('^.*/(.*)' + const_suffix, '\\1', fname)] = score
+    return d
+
 
 def prepare_target(i_fname, o_fname, pythonADT, script_file, param=''):
     
