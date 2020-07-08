@@ -6,8 +6,13 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 import numpy as np
 from scipy.spatial.distance import cdist
+from multiprocessing import cpu_count
 from crem.crem import grow_mol
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
+
+
+def cpu_type(x):
+    return max(1, min(int(x), cpu_count()))
 
 
 def get_mols(pdb_fname, lig_id, lig_smi):
@@ -38,11 +43,11 @@ def get_protected_ids(prot, lig, threshold):
     return protected_ids if protected_ids else None
 
 
-def expand_mol(lig, db_fname, protected_ids):
+def expand_mol(lig, db_fname, protected_ids, ncpu):
     stereo_opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
     new_smi = []
     for new in grow_mol(lig, db_name=db_fname, min_atoms=1, max_atoms=10, protected_ids=protected_ids,
-                        return_rxn=False, return_mol=True, max_replacements=None):
+                        return_rxn=False, return_mol=True, max_replacements=None, ncores=ncpu):
         for b in new[1].GetBonds():
             if b.GetStereo() == Chem.rdchem.BondStereo.STEREOANY:
                 b.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
@@ -70,6 +75,8 @@ def main():
     parser.add_argument('-t', '--threshold', metavar='NUMERIC', required=False, default=2, type=float,
                         help='minimum distance from hydrogen atom to protein atoms to protect the hydrogen '
                              'from replacement.')
+    parser.add_argument('-c', '--ncpu', metavar='INTEGER', required=False, default=1, type=cpu_type,
+                        help='number of cores.')
 
     args = parser.parse_args()
     if os.path.isfile(args.lig_smi):
@@ -78,7 +85,7 @@ def main():
         lig_smi = args.lig_smi
     prot, lig = get_mols(args.input, args.lig_id, lig_smi)
     protected_ids = get_protected_ids(prot, lig, args.threshold)
-    new_smi = expand_mol(lig, args.db, protected_ids)
+    new_smi = expand_mol(lig, args.db, protected_ids, args.ncpu)
 
     with open(args.output, 'wt') as f:
         for i, smi in enumerate(new_smi, 1):
