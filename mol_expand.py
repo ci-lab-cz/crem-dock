@@ -6,7 +6,7 @@ from rdkit import Chem
 from rdkit.Chem import AllChem
 import numpy as np
 from scipy.spatial.distance import cdist
-from multiprocessing import cpu_count
+from multiprocessing import cpu_count, Pool
 from crem.crem import grow_mol
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 
@@ -43,18 +43,27 @@ def get_protected_ids(prot, lig, threshold):
     return protected_ids if protected_ids else None
 
 
-def expand_mol(lig, db_fname, protected_ids, ncpu):
+def gen_stereo(mol):
     stereo_opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
-    new_smi = []
-    for new in grow_mol(lig, db_name=db_fname, min_atoms=1, max_atoms=10, protected_ids=protected_ids,
-                        return_rxn=False, return_mol=True, max_replacements=None, ncores=ncpu):
-        for b in new[1].GetBonds():
-            if b.GetStereo() == Chem.rdchem.BondStereo.STEREOANY:
-                b.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
-        isomers = tuple(EnumerateStereoisomers(new[1], options=stereo_opts))
-        for isomer in isomers:
-            new_smi.append(Chem.MolToSmiles(Chem.RemoveHs(isomer), isomericSmiles=True))
-    return new_smi
+    for b in mol.GetBonds():
+        if b.GetStereo() == Chem.rdchem.BondStereo.STEREOANY:
+            b.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
+    isomers = tuple(EnumerateStereoisomers(mol, options=stereo_opts))
+    res = []
+    for isomer in isomers:
+        res.append(Chem.MolToSmiles(Chem.RemoveHs(isomer), isomericSmiles=True))
+    return res
+
+
+def expand_mol(lig, db_fname, protected_ids, ncpu):
+
+    p = Pool(ncpu)
+    new_mols = list(grow_mol(lig, db_name=db_fname, min_atoms=1, max_atoms=10, protected_ids=protected_ids,
+                             return_rxn=False, return_mol=True, max_replacements=None, ncores=ncpu))
+    res_smi = []
+    for res in p.imap_unordered(gen_stereo, (item[1] for item in new_mols)):
+        res_smi.extend(res)
+    return res_smi
 
 
 def main():
