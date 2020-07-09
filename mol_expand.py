@@ -20,14 +20,14 @@ def get_mols(pdb_fname, lig_id, lig_smi):
     prot_lines = []
     with open(pdb_fname) as f:
         for line in f:
-            if line[17:20] == 'HOH':
+            if line[17:20] == 'HOH' or line.startswith('CONECT') or (line.startswith('HETATM') and line[17:20] != lig_id):
                 continue
             if (line.startswith('ATOM') or line.startswith('HETATM')) and line[17:20] == lig_id:
                 lig_lines.append(line)
             else:
                 prot_lines.append(line)
 
-    prot = Chem.MolFromPDBBlock(''.join(prot_lines))
+    prot = Chem.MolFromPDBBlock(''.join(prot_lines), sanitize=False)
 
     lig = Chem.MolFromPDBBlock(''.join(lig_lines))
     lig = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(lig_smi), lig)
