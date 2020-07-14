@@ -2,6 +2,7 @@ from os.path import join, exists
 from os import makedirs
 from functools import partial
 import argparse
+from sys import exc_info
 from multiprocessing.dummy import Pool
 from multiprocessing import cpu_count
 from rdkit import Chem
@@ -29,6 +30,31 @@ def save_to_pdb(smi, fname):
 
     with open(fname, 'wt') as pdb:
         pdb.write(mol)
+
+
+def save_to_pdb2(child_mol, parent_mol, fname):
+    '''
+    Convert smi to PDB and save pathdir/id_frag.pdb
+    :param smi: str(smiles)
+    :param fname: str(filename)
+    :return: None
+    '''
+    # convert to 3D coord
+    try:
+        mol = AllChem.ConstrainedEmbed(Chem.AddHs(child_mol), parent_mol)
+        mol = Chem.MolToPDBBlock(mol)
+    except ValueError as e:
+        print("Unexpected error1:", e)
+        try:
+            mol = AllChem.ConstrainedEmbed(child_mol, parent_mol)
+            mol = Chem.AddHs(mol, addCoords=True)
+            mol = Chem.MolToPDBBlock(mol)
+        except ValueError as e:
+            print("Unexpected error2:", e)
+            return None
+    with open(fname, 'wt') as pdb:
+        pdb.write(mol)
+        print('Done')
 
 
 def main(input_fname, output_dname, ncpu):
