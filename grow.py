@@ -88,7 +88,7 @@ def convert_smi_to_pdb(smi_fname, output_dname):
             Smi2PDB.save_to_pdb(smi, os.path.join(output_dname, name + '.pdb'))
 
 
-def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, flag):
+def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, iteration):
     """
     :param smi_data: dict {mol_id: smi}
     :param output_dname:
@@ -99,7 +99,7 @@ def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, flag):
     early_dname = '/'.join(
         ['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in enumerate(early_dname)])
     #     early_dname = 'iter_%i' % (int(re.split('_', output_dname)[1]) - 1)
-    if flag:
+    if iteration != 1:
         smi = os.path.join(output_dname, 'old_smi.smi')
         parent_smi = {}
         with open(smi, 'r') as f:
@@ -155,10 +155,10 @@ def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, flag):
             Smi2PDB.save_to_pdb(smi, os.path.join(output_dname, mol_id + '.pdb'))
 
 
-def prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=None, flag=False):
+def prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=None, iteration=1):
 
-    def supply_lig_prep(dname, python_path, vina_script_dir, db_fname=None, flag=False):
-        if flag:
+    def supply_lig_prep(dname, python_path, vina_script_dir, db_fname=None, iteration=1):
+        if iteration != 1:
             conn = sqlite3.connect(db_fname)
             cur = conn.cursor()
             for fname in glob.glob(os.path.join(dname, '*.pdb')):
@@ -171,7 +171,7 @@ def prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=None, flag=
                 yield fname, fname.rsplit('.', 1)[0] + '.pdbqt', python_path, vina_script_dir + 'prepare_ligand4.py'
 
     pool = Pool(ncpu)
-    pool.imap_unordered(Docking.prepare_ligands_mp, supply_lig_prep(dname, python_path, vina_script_dir, db_fname, flag))
+    pool.imap_unordered(Docking.prepare_ligands_mp, supply_lig_prep(dname, python_path, vina_script_dir, db_fname, iteration))
     pool.close()
     pool.join()
 
@@ -187,14 +187,14 @@ def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu)
                                                                                                               target_setup_fname))
 
 
-def get_mol_scores(dname, db_fname, flag):
+def get_mol_scores(dname, db_fname, iteration):
     d = dict()
     conn = sqlite3.connect(db_fname)
     cur = conn.cursor()
     for fname in glob.glob(os.path.join(dname, '*_dock.pdbqt')):
         with open(fname) as f:
             score = float(f.read().split()[5])
-        if flag:
+        if iteration != 1:
             ids = re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)
             par = list(cur.execute("SELECT parent_id FROM mols WHERE id = ?", (ids,)))[0][0]
             rm = get_rmsd(dname=dname, id_ch=ids, id_par=par)
@@ -252,10 +252,10 @@ def sort_clusters(mol_score_dict, smi_dict, mw, bonds):
     return sel
 
 
-def select_clust(all_dict, d, mw):
+def select_clust(all_dict, d, mw, bonds):
     res = []
     for i in all_dict:
-        s = sort_clusters(i, d, mw)
+        s = sort_clusters(i, d, mw, bonds)
         res.append(s)
     return res
 
@@ -365,14 +365,14 @@ def grow_mols_deep(all_clust, dname, target_fname_pdbqt, ntop, h_dist_threshold=
     return sorted(new_mols.items(), key=operator.itemgetter(1))
 
 
-def update_res_db(conn, values, flag):
+def update_res_db(conn, values, iteration):
     """
     :param conn:
     :param values: dict(id: score)
     :return:
     """
     cur = conn.cursor()
-    if flag:
+    if iteration != 1:
         cur.executemany("""UPDATE mols
                            SET docking_score = ?,
                                rmsd = ?
@@ -487,9 +487,6 @@ def make_iteration(input_smi_fname, output_smi_fname, child_parents, old_smi, it
 
     smi_data = get_smi_data(output_db_connection, iteration - 1)
 
-    flag = False
-    if iteration != 1:
-        flag = True
 
     if iteration == 1 and docking_dir is not None:
         all_files = os.listdir(docking_dir)
@@ -497,13 +494,13 @@ def make_iteration(input_smi_fname, output_smi_fname, child_parents, old_smi, it
             shutil.copy(os.path.join(docking_dir, file), os.path.join(dname, file))
 
     else:
-        convert_smi_to_pdb2(smi_data, dname, output_db_connection, flag=flag)
-        prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=db_fname, flag=flag)
+        convert_smi_to_pdb2(smi_data, dname, output_db_connection, iteration=iteration)
+        prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=db_fname, iteration=iteration)
         dock_ligands(dname, target_fname_pdbqt, protein_setup, vina_path, ncpu)
 
-    mol_scores = get_mol_scores(dname, db_fname=db_fname, flag=flag)
-    update_res_db(output_db_connection, mol_scores, flag=flag)
-    if flag:
+    mol_scores = get_mol_scores(dname, db_fname=db_fname, iteration=iteration)
+    update_res_db(output_db_connection, mol_scores, iteration=iteration)
+    if iteration != 1:
         mol_scores = {k: v[0] for k, v in mol_scores.items() if v[1] <= rmsd}
 
 
