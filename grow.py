@@ -109,18 +109,23 @@ def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, iteration)
         print(parent_smi)
 
         second = {}
-        for ids, smis in parent_smi.items():
-            try:
-                fn = os.path.join(early_dname, ids + '_dock.pdbqt')
-                print(f'its fn - {fn}')
-                with open(fn) as f:
-                    pdb_block = f.read().split('MODEL ')[1]
-                    mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-                    template = AllChem.MolFromSmiles(smis)
-                    new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
+        if glob.glob(os.path.join(output_dname, '*_dock.pdbqt')):
+            for ids, smis in parent_smi.items():
+                if os.path.join(early_dname, ids + '_dock.pdbqt'):
+                    with open(os.path.join(early_dname, ids + '_dock.pdbqt')) as f:
+                        pdb_block = f.read().split('MODEL ')[1]
+                        mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+                        template = AllChem.MolFromSmiles(smis)
+                        new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
                     second[ids] = new_mol
-            except:
-                print(fn)
+        else:
+            for ids, smis in parent_smi.items():
+                with open(os.path.join(early_dname, ids + '.pdb')) as f:
+                    f1 = f.read()
+                    m = Chem.MolFromPDBBlock(f1, removeHs=True)
+                template = AllChem.MolFromSmiles(smis)
+                new_mol = AllChem.AssignBondOrdersFromTemplate(template, m)
+                second[ids] = new_mol
 
         file_id = os.path.join(output_dname, 'child_parents.ids')
         first = {}
@@ -129,7 +134,7 @@ def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, iteration)
                 tmp = line.strip().split()
                 first[tmp[0]] = tmp[1]
 
-        atoms = {}
+        atoms = dict()
         for child_id, parent_id in first.items():
             mol_child = Chem.MolFromSmiles(smi_data[child_id])
             mol_parent = second[parent_id]
@@ -212,10 +217,14 @@ def get_rmsd(dname, id_ch, id_par):
 
     early_dname = dname.split('/')
     early_dname = '/'.join(['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in enumerate(early_dname)])
-    p = os.path.join(early_dname, id_par + '_dock.pdbqt')
-    with open(p) as f:
-        pdb_block = f.read().split('MODEL ')[1]
-        parent = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+    if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
+        with open(os.path.join(early_dname, id_par + '_dock.pdbqt')) as f:
+            pdb_block = f.read().split('MODEL ')[1]
+            parent = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+    else:
+        with open(os.path.join(early_dname, id_par + '.pdb')) as f:
+            f1 = f.read()
+            parent = Chem.MolFromPDBBlock(f1, removeHs=True)
 
     child_ids = child.GetSubstructMatch(parent)
     ch_xyz = child.GetConformer().GetPositions()
@@ -364,6 +373,26 @@ def grow_mols_deep(all_clust, dname, target_fname_pdbqt, ntop, h_dist_threshold=
 
     return sorted(new_mols.items(), key=operator.itemgetter(1))
 
+def grow_from_molecula(dname, target_fname_pdbqt, **kwargs):
+    new_mols = dict()
+    mol = glob.glob(os.path.join(dname, '*.pdb'))
+#     mol = os.rename(mol[0],'000-000000.pdb')
+    parent_id = re.sub('^.*/(.*).pdb', '\\1', mol[0])
+    smiles = glob.glob(os.path.join(dname, '*.smi'))
+    with open(mol[0]) as f:
+        f1 = f.read()
+        m = Chem.MolFromPDBBlock(f1, removeHs=False)
+    with open(smiles[0]) as f:
+        smi = f.read()
+        template = AllChem.MolFromSmiles(smi)
+    new_mol = AllChem.AssignBondOrdersFromTemplate(template, m)
+    mol_H = Chem.AddHs(new_mol, addCoords=True)
+    protected_ids = get_protected_ids(mol_H, target_fname_pdbqt, dist_threshold=2)
+    for smi in grow_mol(mol_H, protected_ids=protected_ids, return_rxn=False, **kwargs):
+        if smi not in new_mols:
+            new_mols[smi] = parent_id
+
+    return sorted(new_mols.items(), key=operator.itemgetter(1))
 
 def update_res_db(conn, values, iteration):
     """
@@ -498,28 +527,32 @@ def make_iteration(input_smi_fname, output_smi_fname, child_parents, old_smi, it
         prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=db_fname, iteration=iteration)
         dock_ligands(dname, target_fname_pdbqt, protein_setup, vina_path, ncpu)
 
-    mol_scores = get_mol_scores(dname, db_fname=db_fname, iteration=iteration)
-    update_res_db(output_db_connection, mol_scores, iteration=iteration)
-    if iteration != 1:
-        mol_scores = {k: v[0] for k, v in mol_scores.items() if v[1] <= rmsd}
+    if glob.glob(os.path.join(dname, '*_dock.pdbqt')):
+        mol_scores = get_mol_scores(dname, db_fname=db_fname, iteration=iteration)
+        update_res_db(output_db_connection, mol_scores, iteration=iteration)
+        if iteration != 1:
+            mol_scores = {k: v[0] for k, v in mol_scores.items() if v[1] <= rmsd}
 
 
-    if alg_type == 1:
-        res = selection_grow_greedy(mol_scores=mol_scores, smi_data=smi_data, ntop=ntop, mw=mw, bonds=bonds,
-                                    target_fname_pdbqt=target_fname_pdbqt, dname=dname, ncpu=ncpu, **kwargs)
-    elif alg_type == 2:
-        res = selection_grow_clust_deep(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
-                                        mol_scores=mol_scores, dname=dname, mw=mw, bonds=bonds,
-                                        target_fname_pdbqt=target_fname_pdbqt, ntop=ntop, ncpu=ncpu, **kwargs)
-    elif alg_type == 3:
-        res = selection_grow_clust(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
-                                   mol_scores=mol_scores, ntop=ntop, mw=mw, bonds=bonds, target_fname_pdbqt=target_fname_pdbqt,
-                                   dname=dname, ncpu=ncpu, **kwargs)
+        if alg_type == 1:
+            res = selection_grow_greedy(mol_scores=mol_scores, smi_data=smi_data, ntop=ntop, mw=mw, bonds=bonds,
+                                        target_fname_pdbqt=target_fname_pdbqt, dname=dname, ncpu=ncpu, **kwargs)
+        elif alg_type == 2:
+            res = selection_grow_clust_deep(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
+                                            mol_scores=mol_scores, dname=dname, mw=mw, bonds=bonds,
+                                            target_fname_pdbqt=target_fname_pdbqt, ntop=ntop, ncpu=ncpu, **kwargs)
+        elif alg_type == 3:
+            res = selection_grow_clust(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
+                                       mol_scores=mol_scores, ntop=ntop, mw=mw, bonds=bonds, target_fname_pdbqt=target_fname_pdbqt,
+                                       dname=dname, ncpu=ncpu, **kwargs)
+        else:
+            res = []
     else:
-        res = []
+        res = grow_from_molecula(dname=dname, target_fname_pdbqt=target_fname_pdbqt, **kwargs)
+
 
     if res:
-
+        res = [(i[0], i[1]) for i in res if MolWt(Chem.MolFromSmiles(i[0])) <= mw]
         data = []
         opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
         for i, (smi, parent_id) in enumerate(res):
@@ -571,6 +604,8 @@ def main():
                         help='path to the dir with files after docking.')
     parser.add_argument('-r', '--radius', default=1, type=int,
                         help='context radius for replacement.')
+    parser.add_argument('-mw', '--mol_weight', default=500, type=int,
+                        help='maximum ligand weight')
     parser.add_argument('-m', '--min_freq', default=0, type=int,
                         help='the frequency of occurrence of the fragment in the source database.')
     parser.add_argument('-nt', '--ntop', type=int, required=False,
@@ -624,7 +659,7 @@ def main():
                              iteration=iteration, target_fname_pdbqt=args.protein,
                              output_db_connection=conn, db_fname=output_db, ntop=args.ntop, rmsd=args.rmsd,
                              bonds=args.rotatable_bonds, alg_type=args.algorithm,
-                             index_tanimoto=index_tanimoto, mw=500, docking_dir=args.docking_dir,
+                             index_tanimoto=index_tanimoto, mw=args.mol_weight, docking_dir=args.docking_dir,
                              protein_setup=args.protein_setup, ncpu=args.ncpu, vina_path=args.vina,
                              python_path=python_path, vina_script_dir=vina_script_dir, db_name=args.db,
                              radius=args.radius, min_freq=args.min_freq, min_atoms=1, max_atoms=10,
