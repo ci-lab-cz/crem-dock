@@ -109,14 +109,14 @@ def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, iteration)
         print(parent_smi)
 
         second = {}
-        if glob.glob(os.path.join(output_dname, '*_dock.pdbqt')):
+        if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
             for ids, smis in parent_smi.items():
-                if os.path.join(early_dname, ids + '_dock.pdbqt'):
+                if os.path.exists(os.path.join(early_dname, ids + '_dock.pdbqt')):
                     with open(os.path.join(early_dname, ids + '_dock.pdbqt')) as f:
                         pdb_block = f.read().split('MODEL ')[1]
                         mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-                        template = AllChem.MolFromSmiles(smis)
-                        new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
+                    template = AllChem.MolFromSmiles(smis)
+                    new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
                     second[ids] = new_mol
         else:
             for ids, smis in parent_smi.items():
@@ -210,30 +210,36 @@ def get_mol_scores(dname, db_fname, iteration):
 
 
 def get_rmsd(dname, id_ch, id_par):
-    ch = os.path.join(dname, id_ch + '_dock.pdbqt')
-    with open(ch) as f:
-        pdb_block = f.read().split('MODEL ')[1]
-        child = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-
     early_dname = dname.split('/')
-    early_dname = '/'.join(['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in enumerate(early_dname)])
-    if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
-        with open(os.path.join(early_dname, id_par + '_dock.pdbqt')) as f:
+    early_dname = '/'.join(
+        ['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in
+         enumerate(early_dname)])
+    if os.path.exists(os.path.join(dname, id_ch + '_dock.pdbqt')):
+        with open(os.path.join( dname, id_ch + '_dock.pdbqt')) as f:
             pdb_block = f.read().split('MODEL ')[1]
-            parent = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+            child = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+            # if child:
+            if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
+                if os.path.exists(os.path.join(early_dname, id_par + '_dock.pdbqt')):
+                    with open(os.path.join(early_dname, id_par + '_dock.pdbqt')) as f:
+                        pdb_block = f.read().split('MODEL ')[1]
+                        parent = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+                else:
+                    rms = None
+            else:
+                with open(os.path.join(early_dname, id_par + '.pdb')) as f:
+                    f1 = f.read()
+                    parent = Chem.MolFromPDBBlock(f1, removeHs=True)
+            child_ids = child.GetSubstructMatch(parent)
+            ch_xyz = child.GetConformer().GetPositions()
+            par_xyz = parent.GetConformer().GetPositions()
+            d = []
+            for par_id, ch_id in enumerate(child_ids):
+                d.append(euclidean(par_xyz[par_id,], ch_xyz[ch_id,]))
+            rms = round(np.sqrt(np.mean(np.square(d))), 2)
+            rms = float(rms)
     else:
-        with open(os.path.join(early_dname, id_par + '.pdb')) as f:
-            f1 = f.read()
-            parent = Chem.MolFromPDBBlock(f1, removeHs=True)
-
-    child_ids = child.GetSubstructMatch(parent)
-    ch_xyz = child.GetConformer().GetPositions()
-    par_xyz = parent.GetConformer().GetPositions()
-    d = []
-    for par_id, ch_id in enumerate(child_ids):
-        d.append(euclidean(par_xyz[par_id,], ch_xyz[ch_id,]))
-    rms = round(np.sqrt(np.mean(np.square(d))), 2)
-    rms = float(rms)
+        rms = None
     return rms
 
 
