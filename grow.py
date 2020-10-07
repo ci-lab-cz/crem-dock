@@ -202,42 +202,62 @@ def get_mol_scores(dname, db_fname, iteration):
         if iteration != 1:
             ids = re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)
             par = list(cur.execute("SELECT parent_id FROM mols WHERE id = ?", (ids,)))[0][0]
-            rm = get_rmsd(dname=dname, id_ch=ids, id_par=par)
+            rm = get_rmsd(dname=dname, cur=cur, id_ch=ids, id_par=par)
             d[re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)] = [score, rm]
         else:
             d[re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)] = score
     return d
 
+def get_right_mol(f, ids, cur, flag):
+    smi = list(cur.execute("SELECT smi FROM mols WHERE id = ?", (ids,)))[0][0]
+    template = AllChem.MolFromSmiles(smi)
+    if flag:
+        pdb_block = f.read().split('MODEL ')[1]
+        mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+        new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
+    else:
+        f1 = f.read()
+        mol = Chem.MolFromPDBBlock(f1, removeHs=True)
+        new_mol = AllChem.AssignBondOrdersFromTemplate(template, mol)
+    return new_mol
 
-def get_rmsd(dname, id_ch, id_par):
+def get_rmsd(dname, cur, id_ch, id_par):
     early_dname = dname.split('/')
     early_dname = '/'.join(
         ['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in
          enumerate(early_dname)])
+    rms = 0.
     if os.path.exists(os.path.join(dname, id_ch + '_dock.pdbqt')):
-        with open(os.path.join( dname, id_ch + '_dock.pdbqt')) as f:
-            pdb_block = f.read().split('MODEL ')[1]
-            child = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
+        with open(os.path.join(dname, id_ch + '_dock.pdbqt')) as f:
+            try:
+                child = get_right_mol(f, id_ch, cur, True)
+            except ValueError:
+                rms = None
             # if child:
             if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
                 if os.path.exists(os.path.join(early_dname, id_par + '_dock.pdbqt')):
                     with open(os.path.join(early_dname, id_par + '_dock.pdbqt')) as f:
-                        pdb_block = f.read().split('MODEL ')[1]
-                        parent = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-                else:
-                    rms = None
+                        try:
+                            parent = get_right_mol(f, id_par, cur, True)
+                        except ValueError:
+                            rms = None
+                # else:
+                #     rms = None
             else:
                 with open(os.path.join(early_dname, id_par + '.pdb')) as f:
-                    f1 = f.read()
-                    parent = Chem.MolFromPDBBlock(f1, removeHs=True)
-            child_ids = child.GetSubstructMatch(parent)
-            ch_xyz = child.GetConformer().GetPositions()
-            par_xyz = parent.GetConformer().GetPositions()
-            d = []
-            for par_id, ch_id in enumerate(child_ids):
-                d.append(euclidean(par_xyz[par_id,], ch_xyz[ch_id,]))
-            rms = round(np.sqrt(np.mean(np.square(d))), 2)
-            rms = float(rms)
+                    try:
+                        parent = get_right_mol(f, id_par, cur, False)
+                    except ValueError:
+                        rms = None
+            if rms != None:
+                child_ids = child.GetSubstructMatch(parent)
+                ch_xyz = child.GetConformer().GetPositions()
+                par_xyz = parent.GetConformer().GetPositions()
+                d = []
+                for par_id, ch_id in enumerate(child_ids):
+                    d.append(euclidean(par_xyz[par_id,], ch_xyz[ch_id,]))
+                rms = round(np.sqrt(np.mean(np.square(d))), 2)
+                rms = float(rms)
     else:
         rms = None
     return rms
@@ -537,7 +557,7 @@ def make_iteration(input_smi_fname, output_smi_fname, child_parents, old_smi, it
         mol_scores = get_mol_scores(dname, db_fname=db_fname, iteration=iteration)
         update_res_db(output_db_connection, mol_scores, iteration=iteration)
         if iteration != 1:
-            mol_scores = {k: v[0] for k, v in mol_scores.items() if v[1] <= rmsd}
+            mol_scores = {k: v[0] for k, v in mol_scores.items() if v[1] and v[1] <= rmsd}
 
 
         if alg_type == 1:
