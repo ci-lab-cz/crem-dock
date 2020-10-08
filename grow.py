@@ -98,41 +98,24 @@ def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, iteration)
     early_dname = output_dname.split('/')
     early_dname = '/'.join(
         ['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in enumerate(early_dname)])
-    #     early_dname = 'iter_%i' % (int(re.split('_', output_dname)[1]) - 1)
+    cur = output_db_connection.cursor()
     if iteration != 1:
-        smi = os.path.join(output_dname, 'old_smi.smi')
-        parent_smi = {}
-        with open(smi, 'r') as f:
-            for i, line in enumerate(f):
-                tmp = line.strip().split()
-                parent_smi[tmp[0]] = tmp[1]
-        print(parent_smi)
-
+        parent_smi = dict(cur.execute("SELECT id, smi FROM mols WHERE iteration = %i" % (iteration - 2)))
         second = {}
         if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
             for ids, smis in parent_smi.items():
                 if os.path.exists(os.path.join(early_dname, ids + '_dock.pdbqt')):
                     with open(os.path.join(early_dname, ids + '_dock.pdbqt')) as f:
-                        pdb_block = f.read().split('MODEL ')[1]
-                        mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-                    template = AllChem.MolFromSmiles(smis)
-                    new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
+                        new_mol = get_right_mol(f, ids, cur, True)
                     second[ids] = new_mol
         else:
             for ids, smis in parent_smi.items():
                 with open(os.path.join(early_dname, ids + '.pdb')) as f:
-                    f1 = f.read()
-                    m = Chem.MolFromPDBBlock(f1, removeHs=True)
-                template = AllChem.MolFromSmiles(smis)
-                new_mol = AllChem.AssignBondOrdersFromTemplate(template, m)
+                    new_mol = get_right_mol(f, ids, cur, False)
                 second[ids] = new_mol
 
-        file_id = os.path.join(output_dname, 'child_parents.ids')
-        first = {}
-        with open(file_id, 'r') as f:
-            for i, line in enumerate(f):
-                tmp = line.strip().split()
-                first[tmp[0]] = tmp[1]
+        first = dict(cur.execute("SELECT id, parent_id FROM mols WHERE iteration = %i" % (iteration - 1)))
+
 
         atoms = dict()
         for child_id, parent_id in first.items():
@@ -534,7 +517,7 @@ def selection_grow_clust_deep(input_smi_fname, index_tanimoto, mol_scores, dname
     return res
 
 
-def make_iteration(input_smi_fname, output_smi_fname, child_parents, old_smi, iteration, target_fname_pdbqt,
+def make_iteration(input_smi_fname, output_smi_fname, iteration, target_fname_pdbqt,
                    output_db_connection, db_fname,
                    ntop, rmsd, bonds, alg_type, docking_dir, protein_setup, ncpu, vina_path, python_path, vina_script_dir,
                    index_tanimoto=None, mw=500, **kwargs):
@@ -590,14 +573,6 @@ def make_iteration(input_smi_fname, output_smi_fname, child_parents, old_smi, it
                 mol_id = str(iteration).zfill(3) + '-' + str(i).zfill(6) + '-' + str(st_numb).zfill(2)
                 data.append((mol_id, iteration, st_smi, parent_id, None, None, None))
         insert_db(output_db_connection, data)
-
-        with open(old_smi, 'wt') as f:
-            for k, v in smi_data.items():
-                f.write('%s\t%s\n' % (k, v))
-
-        with open(child_parents, 'wt') as f:
-            for item in data:
-                f.write('%s\t%s\n' % (item[0], item[3]))
 
         with open(output_smi_fname, 'wt') as f:
             for item in data:
@@ -676,12 +651,9 @@ def main():
         output_dname = os.path.abspath(
             os.path.join(os.path.dirname(input_smi_fname), '..', 'iter_%i' % (iteration + 1)))
         os.makedirs(output_dname)
-        child_parents = os.path.join(output_dname, 'child_parents.ids')
-        old_smi = os.path.join(output_dname, 'old_smi.smi')
         output_smi_fname = os.path.join(output_dname, 'input.smi')
         index_tanimoto = 0.9  # required for alg 2 and 3
         res = make_iteration(input_smi_fname=input_smi_fname, output_smi_fname=output_smi_fname,
-                             child_parents=child_parents, old_smi=old_smi,
                              iteration=iteration, target_fname_pdbqt=args.protein,
                              output_db_connection=conn, db_fname=output_db, ntop=args.ntop, rmsd=args.rmsd,
                              bonds=args.rotatable_bonds, alg_type=args.algorithm,
