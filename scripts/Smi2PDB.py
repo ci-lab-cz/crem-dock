@@ -11,25 +11,24 @@ from rdkit.Chem import AllChem
 
 def save_to_pdb(smi, fname):
     '''
-    Convert smi to PDB and save pathdir/id_frag.pdb
-    :param smi: str(smiles)
-    :param fname: str(filename)
+    Convert smi to PDB and save to file
+    :param smi: smiles
+    :param fname: filename
     :return: None
     '''
-    # convert to 3D coord
-    try:
-        mol = Chem.MolFromSmiles(smi)
+    mol = Chem.MolFromSmiles(smi)
+    if mol is not None:
         mol = Chem.AddHs(mol)
-        # compute coord
-        AllChem.EmbedMolecule(mol, AllChem.ETKDG())
-        mol = Chem.MolToPDBBlock(mol)
-        # print(id_frag, 'Done')
-    except:
-        print('Problem convertation of', smi)
-        return None
-
-    with open(fname, 'wt') as pdb:
-        pdb.write(mol)
+        try:
+            res = AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+            if res == 0:
+                pdb = Chem.MolToPDBBlock(mol)
+                with open(fname, 'wt') as f:
+                    f.write(pdb)
+        except:
+            print('Embedding problem of', smi)
+    else:
+        print('Conversion problem of', smi)
 
 
 def save_to_pdb2(child_mol, parent_mol, fname):

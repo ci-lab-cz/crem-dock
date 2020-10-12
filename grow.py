@@ -2,16 +2,17 @@ import glob
 import os
 import shutil
 import argparse
-import operator
-import re
-import numpy as np
+import random
+import string
+from numpy.linalg import norm
 import sqlite3
 from rdkit import Chem, DataStructs
-from rdkit.Chem import AllChem, rdMolDescriptors
+from rdkit.Chem import AllChem
+from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from rdkit.ML.Cluster import Butina
 from rdkit.Chem.Descriptors import MolWt
 from scipy.spatial.distance import euclidean
-from sklearn.externals.joblib import Parallel, delayed
+from joblib import Parallel, delayed
 from multiprocessing import Pool, cpu_count
 from scripts import Docking, Smi2PDB
 from crem.crem import grow_mol
@@ -23,143 +24,51 @@ def cpu_type(x):
     return max(1, min(int(x), cpu_count()))
 
 
-def __get_first_mol_from_pdbqt(fname: str) -> Chem.Mol:
-    '''
-    :param fname:
-    :return: list of rdkit MOL from pdbqt
-    '''
-
-    def create_mol(fname):
-        with open(fname.split('_dock')[0] + '.pdb') as f:
-            f1 = f.read()
-            m = Chem.MolFromPDBBlock(f1, removeHs=False)
-
-        with open(fname) as f:
-            pdb_block = f.read().split('MODEL ')[1]
-            mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=False)
-        Editable_m = Chem.EditableMol(m)
-        for bond in m.GetBonds():
-            ind_1, ind_2 = bond.GetBeginAtomIdx(), bond.GetEndAtomIdx()
-            Editable_m.RemoveBond(ind_1, ind_2)
-            Editable_m.AddBond(ind_1, ind_2, order=Chem.rdchem.BondType.SINGLE)
-        m_new = Editable_m.GetMol()
-        match_ids = m_new.GetSubstructMatches(mvina)
-        print(match_ids)
-        for mvina_atom_id, m_atom_id in enumerate(match_ids[0]):
-            pos = mvina.GetConformer().GetAtomPosition(mvina_atom_id)
-            m.GetConformer().SetAtomPosition(m_atom_id, pos)
-
-        ind_list = []
-        for atom in m.GetAtoms():
-            idx = atom.GetIdx()
-            if idx not in match_ids[0]:
-                ind_list.append(idx)
-
-        for x in sorted(ind_list, reverse=True):
-            nbrs = m.GetAtomWithIdx(x).GetNeighbors()
-            if len(nbrs) == 1 and nbrs[0].GetAtomicNum() > 1:
-                nbrs[0].SetNumExplicitHs(nbrs[0].GetNumExplicitHs() + 1)
-
-        Editable_m_H = Chem.EditableMol(m)
-        for i in sorted(ind_list, reverse=True):
-            Editable_m_H.RemoveAtom(i)
-        mm = Editable_m_H.GetMol()
-        m_H = Chem.AddHs(mm, addCoords=True)
-        print(Chem.MolToSmiles(m_H))
-        m_H.UpdatePropertyCache()
-        Chem.GetSymmSSSR(m_H)
-        m_H.GetRingInfo().NumRings()
-        return m_H
-
-    #     with open(fname) as f:
-    #         pdb_block = f.read().split('MODEL ')[1]
-    mol = create_mol(fname)
-    Chem.AssignAtomChiralTagsFromStructure(mol)
-    #         print(Chem.MolToSmiles(mol, isomericSmiles=True))
-    return mol
+def sort_two_lists(primary, secondary):
+    # sort two lists by order of elements of the primary list
+    paired_sorted = sorted(zip(primary, secondary), key=lambda x: x[0])
+    return map(list, zip(*paired_sorted))  # two lists
 
 
-def convert_smi_to_pdb(smi_fname, output_dname):
-    with open(smi_fname) as f:
-        for i, line in enumerate(f):
-            tmp = line.strip().split()
-            smi = tmp[0]
-            name = tmp[1] if len(tmp) > 1 else str(i)
-            Smi2PDB.save_to_pdb(smi, os.path.join(output_dname, name + '.pdb'))
+def get_mol_ids(mols):
+    return [mol.GetPpop('_Name') for mol in mols]
 
 
-def convert_smi_to_pdb2(smi_data, output_dname, output_db_connection, iteration):
+def save_smi_to_pdb(conn, iteration, tmpdir):
     """
     :param smi_data: dict {mol_id: smi}
     :param output_dname:
     :return:
     """
 
-    early_dname = output_dname.split('/')
-    early_dname = '/'.join(
-        ['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in enumerate(early_dname)])
-    cur = output_db_connection.cursor()
-    if iteration != 1:
-        parent_smi = dict(cur.execute("SELECT id, smi FROM mols WHERE iteration = %i" % (iteration - 2)))
-        second = {}
-        if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
-            for ids, smis in parent_smi.items():
-                if os.path.exists(os.path.join(early_dname, ids + '_dock.pdbqt')):
-                    with open(os.path.join(early_dname, ids + '_dock.pdbqt')) as f:
-                        new_mol = get_right_mol(f, ids, cur, True)
-                    second[ids] = new_mol
-        else:
-            for ids, smis in parent_smi.items():
-                with open(os.path.join(early_dname, ids + '.pdb')) as f:
-                    new_mol = get_right_mol(f, ids, cur, False)
-                second[ids] = new_mol
-
-        first = dict(cur.execute("SELECT id, parent_id FROM mols WHERE iteration = %i" % (iteration - 1)))
+    cur = conn.cursor()
+    for mol_name, smi in cur.execute(f"SELECT id, smi FROM mols WHERE iteration = {iteration}"):
+        Smi2PDB.save_to_pdb(smi, os.path.join(tmpdir, f'{mol_name}.pdb'))
 
 
-        atoms = dict()
-        for child_id, parent_id in first.items():
-            mol_child = Chem.MolFromSmiles(smi_data[child_id])
-            mol_parent = second[parent_id]
-            Smi2PDB.save_to_pdb2(mol_child, mol_parent, os.path.join(output_dname, child_id + '.pdb'))
-            child_ids = mol_child.GetSubstructMatch(mol_parent)
-            pars = combinations(child_ids, 2)
-            ids = ''
-            for par in list(pars):
-                answer = mol_child.GetBondBetweenAtoms(par[0], par[1])
-                if answer is not None:
-                    bond = str(par[0]) + '_' + str(par[1]) + '_'
-                    ids += bond
-                else:
-                    continue
-            ids = ids[:-1]
-            atoms[child_id] = ids
-        print('atoms', atoms)
-        update_res_db2(output_db_connection, atoms)
+def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
+    """
+    Prepares ligands and save pdbqt files with the same name as pdb files in the temporary directory
+    :param conn: docking DB connection
+    :param dname: temporary dir with pdb files
+    :param iteration: number of iteration
+    :param python_path:
+    :param vina_script_dir:
+    :param ncpu:
+    :return:
+    """
 
-    else:
-        print('iteration number 1')
-        for mol_id, smi in smi_data.items():
-            Smi2PDB.save_to_pdb(smi, os.path.join(output_dname, mol_id + '.pdb'))
-
-
-def prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=None, iteration=1):
-
-    def supply_lig_prep(dname, python_path, vina_script_dir, db_fname=None, iteration=1):
-        if iteration != 1:
-            conn = sqlite3.connect(db_fname)
-            cur = conn.cursor()
-            for fname in glob.glob(os.path.join(dname, '*.pdb')):
-                id_mol = re.sub('^.*/(.*).pdb', '\\1', fname)
-                atoms = list(cur.execute("SELECT atoms FROM mols WHERE id = ?", (id_mol,)))[0][0]
-                yield fname, fname.rsplit('.', 1)[
-                    0] + '.pdbqt', python_path, vina_script_dir + 'prepare_ligand4.py', atoms
-        else:
-            for fname in glob.glob(os.path.join(dname, '*.pdb')):
-                yield fname, fname.rsplit('.', 1)[0] + '.pdbqt', python_path, vina_script_dir + 'prepare_ligand4.py'
+    def supply_lig_prep():
+        cur = conn.cursor()
+        for fname in glob.glob(os.path.join(dname, '*.pdb')):
+            mol_id = os.path.basename(os.path.splitext(fname)[0])
+            atoms = list(cur.execute(f"SELECT atoms FROM mols WHERE id = {mol_id}"))[0][0]
+            if atoms is None:
+                atoms = ''
+            yield fname, os.path.splitext(fname)[0] + '.pdbqt', python_path, vina_script_dir + 'prepare_ligand4.py', atoms
 
     pool = Pool(ncpu)
-    pool.imap_unordered(Docking.prepare_ligands_mp, supply_lig_prep(dname, python_path, vina_script_dir, db_fname, iteration))
+    pool.imap_unordered(Docking.prepare_ligands_mp, supply_lig_prep())
     pool.close()
     pool.join()
 
@@ -175,162 +84,225 @@ def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu)
                                                                                                               target_setup_fname))
 
 
-def get_mol_scores(dname, db_fname, iteration):
-    d = dict()
-    conn = sqlite3.connect(db_fname)
+def update_db(conn, dname):
+    """
+    Insert score, rmsd, fixed bonds string, pdb and mol blocks of molecules having a corresponding pdbqt file in the
+    temporary dir in docking DB
+    :param conn: connection to docking DB
+    :param dname: path to temp directory with files after docking. Those files should have names <mol_id>_dock.pdbqt
+    :return:
+    """
+
     cur = conn.cursor()
+
     for fname in glob.glob(os.path.join(dname, '*_dock.pdbqt')):
-        with open(fname) as f:
-            score = float(f.read().split()[5])
-        if iteration != 1:
-            ids = re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)
-            par = list(cur.execute("SELECT parent_id FROM mols WHERE id = ?", (ids,)))[0][0]
-            rm = get_rmsd(dname=dname, cur=cur, id_ch=ids, id_par=par)
-            d[re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)] = [score, rm]
-        else:
-            d[re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)] = score
-    return d
 
-def get_right_mol(f, ids, cur, flag):
-    smi = list(cur.execute("SELECT smi FROM mols WHERE id = ?", (ids,)))[0][0]
-    template = AllChem.MolFromSmiles(smi)
-    if flag:
-        pdb_block = f.read().split('MODEL ')[1]
-        mvina = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('\n')]), removeHs=True)
-        new_mol = AllChem.AssignBondOrdersFromTemplate(template, mvina)
-    else:
-        f1 = f.read()
-        mol = Chem.MolFromPDBBlock(f1, removeHs=True)
-        new_mol = AllChem.AssignBondOrdersFromTemplate(template, mol)
-    return new_mol
+        # get pdb block
+        pdb_block = open(fname).read()
 
-def get_rmsd(dname, cur, id_ch, id_par):
-    early_dname = dname.split('/')
-    early_dname = '/'.join(
-        ['iter_%i' % (int(re.split('_', early_dname[i])[1]) - 1) if x.find('iter') != -1 else x for i, x in
-         enumerate(early_dname)])
-    rms = 0.
-    if os.path.exists(os.path.join(dname, id_ch + '_dock.pdbqt')):
-        with open(os.path.join(dname, id_ch + '_dock.pdbqt')) as f:
-            try:
-                child = get_right_mol(f, id_ch, cur, True)
-            except ValueError:
-                rms = None
-            # if child:
-            if glob.glob(os.path.join(early_dname, '*_dock.pdbqt')):
-                if os.path.exists(os.path.join(early_dname, id_par + '_dock.pdbqt')):
-                    with open(os.path.join(early_dname, id_par + '_dock.pdbqt')) as f:
-                        try:
-                            parent = get_right_mol(f, id_par, cur, True)
-                        except ValueError:
-                            rms = None
-                # else:
-                #     rms = None
-            else:
-                with open(os.path.join(early_dname, id_par + '.pdb')) as f:
-                    try:
-                        parent = get_right_mol(f, id_par, cur, False)
-                    except ValueError:
-                        rms = None
-            if rms != None:
-                child_ids = child.GetSubstructMatch(parent)
-                ch_xyz = child.GetConformer().GetPositions()
-                par_xyz = parent.GetConformer().GetPositions()
-                d = []
-                for par_id, ch_id in enumerate(child_ids):
-                    d.append(euclidean(par_xyz[par_id,], ch_xyz[ch_id,]))
-                rms = round(np.sqrt(np.mean(np.square(d))), 2)
-                rms = float(rms)
-    else:
-        rms = None
-    return rms
+        # get score
+        score = pdb_block.split()[5]
+
+        # get mol block for the first pose
+        mol_id = os.path.basename(fname).replace('_dock.pdbqt', '')
+        smi = list(cur.execute(f'SELECT smi FROM mols WHERE id = {mol_id}'))[0][0]
+        mol_block = None
+        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('MODEL')[0].split('\n')]), removeHs=False)
+        if mol:
+            mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
+            mol.SetProp('_Name', mol_id)
+            mol_block = Chem.MolToMolBlock(mol)
+
+        # get atoms
+        parent_mol_block = list(cur.execute(f'SELECT mol_block FROM mols WHERE id = (SELECT parent_id FROM mols WHERE id = {mol_id})'))[0][0]
+        parent_mol = Chem.MolFromMolBlock(parent_mol_block)
+        ids = mol.GetSubstructMatch(parent_mol)
+        atoms = []
+        for i, j in combinations(ids, 2):
+            bond = mol.GetBondBetweenAtoms(i, j)
+            if bond is not None:
+                atoms.append(f'{i}_{j}')
+        atoms = '_'.join(atoms)
+
+        # get rmsd
+        rms = get_rmsd(mol, parent_mol)
+
+        cur.execute("""UPDATE mols
+                           SET pdb_block = ?,
+                               mol_block = ?,
+                               score = ?,
+                               atoms = ?,
+                               rmsd = ? 
+                           WHERE
+                               id = ?
+                        """, (pdb_block, mol_block, score, atoms, rms, mol_id))
+    conn.commit()
 
 
-def select_mols(mol_score_dict, smi_dict, ntop, mw, bonds):
-    sel = tuple((score, mol_id) for (mol_id, score) in mol_score_dict.items() if
-                MolWt(Chem.MolFromSmiles(smi_dict[mol_id])) < mw and rdMolDescriptors.CalcNumRotatableBonds(Chem.MolFromSmiles(smi_dict[mol_id])) <= bonds)
-    sel = sorted(sel)[:ntop]
-    return tuple(mol_id for score, mol_id in sel)
+def get_rmsd(child_mol, parent_mol):
+    """
+    Returns best fit rmsd between a common part of child and parent molecules taking into account symmetry of molecules
+    :param child_mol: Mol
+    :param parent_mol: Mol
+    :return:
+    """
+    match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
+    best_rms = float('inf')
+    for ids in match_ids:
+        rms = norm(child_mol.GetConformer().GetPositions()[ids, ] - parent_mol.GetConformer().GetPositions())
+        if rms < best_rms:
+            best_rms = rms
+    return best_rms
 
 
-def select_mols_from_clust(all_dict, d, ntop, mw, bonds):
-    res = []
-    for i in all_dict:
-        s = select_mols(i, d, ntop, mw, bonds)
-        res.append(s)
-    r = tuple(y for x in res for y in x)
-    return r  # return tuple of molecules
+def get_docked_mol_ids(conn, iteration):
+    """
+    Returns mol_ids for molecules which where docked at the given iteration and conversion to mol block was successful
+    :param conn:
+    :param iteration:
+    :return:
+    """
+    cur = conn.cursor()
+    res = cur.execute(f'SELECT id FROM mols WHERE iteration = {iteration} AND mol_block IS NOT NULL')
+    return [i[0] for i in res]
 
 
-def sort_clusters(mol_score_dict, smi_dict, mw, bonds):
-    sel = tuple((score, mol_id) for (mol_id, score) in mol_score_dict.items() if
-                MolWt(Chem.MolFromSmiles(smi_dict[mol_id])) < mw and rdMolDescriptors.CalcNumRotatableBonds(Chem.MolFromSmiles(smi_dict[mol_id])) <= bonds)
-    sel = sorted(sel)
-    sel = tuple(mol_id for score, mol_id in sel)
-    return sel
+def get_mols(conn, mol_ids):
+    """
+    Returns list of Mol objects from docking DB, order is arbitrary
+    :param conn: connection to docking DB
+    :param mol_ids: list of molecules to retrieve
+    :return:
+    """
+    cur = conn.cursor()
+    sql = f'SELECT mol_block FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+    return [items[0] for items in cur.execute(sql, mol_ids)]
 
 
-def select_clust(all_dict, d, mw, bonds):
-    res = []
-    for i in all_dict:
-        s = sort_clusters(i, d, mw, bonds)
-        res.append(s)
-    return res
+def get_mol_scores(conn, mol_ids):
+    """
+    Return dict of mol_id: score
+    :param conn: connection to docking DB
+    :param mol_ids: list of mol ids
+    :return:
+    """
+    cur = conn.cursor()
+    sql = f'SELECT id, docking_score FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+    return dict(cur.execute(sql, mol_ids))
 
 
-def get_simple_dict(smi_fname):
-    with open(smi_fname) as f:
-        d = {}
-        for i, line in enumerate(f):
-            tmp = line.strip().split()
-            smi = tmp[0]
-            name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-            d[name] = smi
-    return d
+def get_mol_rms(conn, mol_ids):
+    """
+    Return dict of mol_id: rmsd
+    :param conn: connection to docking DB
+    :param mol_ids: list of mol ids
+    :return:
+    """
+    cur = conn.cursor()
+    sql = f'SELECT id, rmsd FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+    return dict(cur.execute(sql, mol_ids))
 
 
-def gen_cluster_subset_algButina(smi_fname, index_tanimoto, mol_scores):
-    with open(smi_fname) as f:
-        dict_index = {}
-        fps = []
-        for i, line in enumerate(f):
-            tmp = line.strip().split()
-            smi = tmp[0]
-            name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-            mol = Chem.MolFromSmiles(smi)
-            fingerprint = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=512)
-            fps.append(fingerprint)
-            dict_index[i] = name
+def filter_mols(mols, mw=None, rtb=None):
+    """
+    Returns list of molecules satisfying given conditions
+    :param mols: list of molecules
+    :param mw: maximum MW (optional)
+    :param rtb: maximum number of rotatable bonds (optional)
+    :return: list of molecules
+    """
+    output = []
+    for mol in mols:
+        if (mw is None or MolWt(mol) <= mw) and (rtb is None or CalcNumRotatableBonds(mol) <= rtb):
+            output.append(mol)
+    return output
+
+
+def filter_mols_by_rms(mols, conn, rms):
+    """
+    Remove molecules with rmsd greater than the threshold
+    :param mols: list of molecules
+    :param conn: connection to docking DB
+    :param rms: rmsd threshold
+    :return: list of molecules
+    """
+    output = []
+    mol_ids = get_mol_ids(mols)
+    rmsd = get_mol_rms(conn, mol_ids)
+    for mol in mols:
+        if rmsd[mol.GetProp('_Name')] <= rms:
+            output.append(mol)
+    return output
+
+
+def select_top_mols(mols, conn, ntop):
+    """
+    Returns list of ntop molecules with the highest score
+    :param mols: list of molecules
+    :param conn: connection to docking DB
+    :param ntop: number of top scored molecules to select
+    :return:
+    """
+    mol_ids = get_mol_ids(mols)
+    scores = get_mol_scores(conn, mol_ids)
+    scores, mol_ids = sort_two_lists([scores[mol_id] for mol_id in mol_ids], mol_ids)
+    mol_ids = set(mol_ids[:ntop])
+    mols = [mol for mol in mols if mol.GetProp('_Name' in mol_ids)]
+    return mols
+
+
+def sort_clusters(conn, clusters):
+    """
+    Returns clusters with molecules filtered by properties and reordered according to docking scores
+    :param conn: connection to docking DB
+    :param clusters: tuple of tuples with mol ids in each cluster
+    :return: list of lists with mol ids
+    """
+    scores = get_mol_scores(conn, [mol_id for cluster in clusters for mol_id in cluster])
+    output = []
+    for cluster in clusters:
+        s, mol_ids = sort_two_lists([scores[mol_id] for mol_id in cluster], cluster)
+        output.append(mol_ids)
+    return output
+
+
+def gen_cluster_subset_algButina(mols, tanimoto):
+    """
+    Returns tuple of tuples with mol ids in each cluster
+    :param mols: list of molecules
+    :param tanimoto: tanimoto threshold for clustering
+    :return:
+    """
+    dict_index = {}
+    fps = []
+    for i, mol in enumerate(mols):
+        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=512)   ### why so few?
+        fps.append(fp)
+        dict_index[i] = mol.GetProp('_Name')
     dists = []
     for i, fp in enumerate(fps):
         distance_matrix = DataStructs.BulkTanimotoSimilarity(fps[i], fps[:i])
         dists.extend([1 - x for x in distance_matrix])
-    cs = Butina.ClusterData(dists, len(fps), index_tanimoto,
-                            isDistData=True)  # returns  tuple of tuples with sequential numbers of compounds in each cluster
-    al = []
-    for i in cs:
-        data = []
-        for number in i:
-            data.append(dict_index[number])
-        al.append(data)
-    all_dict = []
-    for i in al:
-        dict_scores = {}
-        for j in i:
-            try:
-                dict_scores[j] = mol_scores[j]
-            except:
-                continue  #
-        all_dict.append(dict_scores)
-    return all_dict
+    # returns tuple of tuples with sequential numbers of compounds in each cluster
+    cs = Butina.ClusterData(dists, len(fps), tanimoto, isDistData=True)
+    # replace sequential ids with actual mol ids
+    output = tuple((dict_index[y] for y in x) for x in cs)
+    return output
 
 
-def get_protected_ids(best_conf_H, protein_file, dist_threshold):
+def get_protected_ids(mol, protein_file, dist_threshold):
+    """
+    Returns list of atoms ids which have hydrogen atoms close to the protein
+    :param mol: molecule
+    :param protein_file: protein pdbqt file
+    :param dist_threshold: minimum distance to hydrogen atoms
+    :return:
+    """
     pdb_block = open(protein_file).readlines()
     protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]))
     protein_cord = protein.GetConformer().GetPositions()
     ids = set()
-    for atom, cord in zip(best_conf_H.GetAtoms(), best_conf_H.GetConformer().GetPositions()):
+    for atom, cord in zip(mol.GetAtoms(), mol.GetConformer().GetPositions()):
         b = False
         if atom.GetAtomicNum() == 1:
             for i in protein_cord:
@@ -339,115 +311,41 @@ def get_protected_ids(best_conf_H, protein_file, dist_threshold):
                     break
             if b:
                 ids.add(atom.GetIdx())
-
     return sorted(ids)
 
 
-def grow_mols(fnames, target_fname_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
-    new_mols = dict()
-    for fname in fnames:
-
-        parent_id = re.sub('^.*/(.*)_dock.pdbqt', '\\1', fname)
-        best_conf_H = __get_first_mol_from_pdbqt(fname)
-        protected_ids = get_protected_ids(best_conf_H, target_fname_pdbqt, h_dist_threshold)
-
-        for smi in grow_mol(best_conf_H, protected_ids=protected_ids, return_rxn=False, ncores=ncpu, **kwargs):
-            if smi not in new_mols:
-                new_mols[smi] = parent_id
-
-    return sorted(new_mols.items(), key=operator.itemgetter(1))
+def __grow_mol(mol, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
+    mol = Chem.AddHs(mol)
+    protected_ids = get_protected_ids(mol, protein_pdbqt, h_dist_threshold)
+    return list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
 
 
-def grow_mols_deep(all_clust, dname, target_fname_pdbqt, ntop, h_dist_threshold=2, ncpu=1, **kwargs):
-    new_mols = dict()
-    for number, clust in enumerate(all_clust):
-        # print(number)
-        n_selected = 0
-        for num, mol_id in enumerate(clust):
-            # print(number, num, mol_id)
-            parent_id = mol_id
-            fn = os.path.join(dname, mol_id + '_dock.pdbqt')
-            best_conf_H = __get_first_mol_from_pdbqt(fn)
-            protected_ids = get_protected_ids(best_conf_H, target_fname_pdbqt, h_dist_threshold)
-            new_molecules = list(
-                grow_mol(best_conf_H, protected_ids=protected_ids, return_rxn=False, ncores=ncpu, **kwargs))
-            # print(new_molecules)
-            if new_molecules:
-                n_selected += 1
-                for smi in new_molecules:
-                    if smi not in new_mols:
-                        new_mols[smi] = parent_id
-                if n_selected == ntop:
-                    break
-
-    return sorted(new_mols.items(), key=operator.itemgetter(1))
-
-def grow_from_molecula(dname, target_fname_pdbqt, **kwargs):
-    new_mols = dict()
-    mol = glob.glob(os.path.join(dname, '*.pdb'))
-#     mol = os.rename(mol[0],'000-000000.pdb')
-    parent_id = re.sub('^.*/(.*).pdb', '\\1', mol[0])
-    smiles = glob.glob(os.path.join(dname, '*.smi'))
-    with open(mol[0]) as f:
-        f1 = f.read()
-        m = Chem.MolFromPDBBlock(f1, removeHs=False)
-    with open(smiles[0]) as f:
-        smi = f.read()
-        template = AllChem.MolFromSmiles(smi)
-    new_mol = AllChem.AssignBondOrdersFromTemplate(template, m)
-    mol_H = Chem.AddHs(new_mol, addCoords=True)
-    protected_ids = get_protected_ids(mol_H, target_fname_pdbqt, dist_threshold=2)
-    for smi in grow_mol(mol_H, protected_ids=protected_ids, return_rxn=False, **kwargs):
-        if smi not in new_mols:
-            new_mols[smi] = parent_id
-
-    return sorted(new_mols.items(), key=operator.itemgetter(1))
-
-def update_res_db(conn, values, iteration):
+def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
     """
-    :param conn:
-    :param values: dict(id: score)
-    :return:
-    """
-    cur = conn.cursor()
-    if iteration != 1:
-        cur.executemany("""UPDATE mols
-                           SET docking_score = ?,
-                               rmsd = ?
-                           WHERE
-                               id = ?
-                        """, [(v[0],v[1], k) for k, v in values.items()])
-    else:
-        cur.executemany("""UPDATE mols
-                           SET docking_score = ? 
-                           WHERE
-                               id = ?
-                        """, [(v, k) for k, v in values.items()])
-    conn.commit()
 
-
-def update_res_db2(conn, values):
+    :param mols: list of molecules
+    :param protein_pdbqt: protein pdbqt file
+    :param h_dist_threshold: maximum distance from H atoms to the protein to mark them as protected from further grow
+    :param ncpu: number of cpu
+    :param kwargs: arguments passed to crem function grow_mol
+    :return: dict of parent ids and lists of corresponding generated mols
     """
-    :param conn:
-    :param values: dict(id: score)
-    :return:
-    """
-    cur = conn.cursor()
-    cur.executemany("""UPDATE mols
-                       SET atoms = ? 
-                       WHERE
-                           id = ?
-                    """, [(v, k) for k, v in values.items()])
-    conn.commit()
+    res = dict()
+    for mol in mols:
+        tmp = __grow_mol(mol, protein_pdbqt, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
+        if tmp:
+            res[mol.GetProp('_Name')] = tmp
+    return res
 
 
 def insert_db(conn, data):
     cur = conn.cursor()
-    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?)""", data)
+    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
     conn.commit()
 
 
-def create_db(conn):
+def create_db(fname):
+    conn = sqlite3.connect(fname)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS mols")
     cur.execute("""CREATE TABLE IF NOT EXISTS mols
@@ -458,125 +356,185 @@ def create_db(conn):
              parent_id TEXT,
              docking_score REAL,
              atoms TEXT,
-             rmsd REAL
+             rmsd REAL,
+             pdb_block TEXT,
+             mol_block TEXT
             )""")
     conn.commit()
+    conn.close()
 
 
-def get_smi_data(conn, iteration):
+def insert_starting_structures_to_db(fname, db_fname):
     """
-    :param conn:
-    :param iteration:
-    :return: dict {mol_id: smi}
+
+    :param fname: SMILES or SDF with 3D coordinates
+    :param db_fname: output DB
+    :return:
     """
-    cur = conn.cursor()
-    cur.execute("SELECT id, smi FROM mols WHERE iteration = %i" % iteration)
-    return dict(cur.fetchall())
-
-
-def insert_starting_smi_to_db(smi_fname, conn):
-    with open(smi_fname) as f:
-        data = []
-        for i, line in enumerate(f):
-            tmp = line.strip().split()
-            smi = tmp[0]
-            name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-            data.append((name, 0, smi, None, None, None, None))
-        insert_db(conn, data)
-
-
-def selection_grow_greedy(mol_scores, smi_data, ntop, mw, bonds, target_fname_pdbqt, dname, ncpu=1, **kwargs):
-    selected_mols = select_mols(mol_scores, smi_data, ntop, mw, bonds)
-    res = None
-    if selected_mols:
-        selected_mol_fnames = [os.path.join(dname, mol_id + '_dock.pdbqt') for mol_id in selected_mols]
-        res = grow_mols(selected_mol_fnames, target_fname_pdbqt, ncpu=ncpu, **kwargs)
-    return res
-
-
-def selection_grow_clust(input_smi_fname, index_tanimoto, mol_scores, ntop, mw, bonds, target_fname_pdbqt, dname, ncpu=1,
-                         **kwargs):
-    d = get_simple_dict(input_smi_fname)
-    clusters = gen_cluster_subset_algButina(input_smi_fname, index_tanimoto, mol_scores)
-    selected_mols = select_mols_from_clust(clusters, d, ntop, mw, bonds)
-    res = None
-    if selected_mols:
-        selected_mol_fnames = [os.path.join(dname, mol_id + '_dock.pdbqt') for mol_id in selected_mols]
-        res = grow_mols(selected_mol_fnames, target_fname_pdbqt, ncpu=ncpu, **kwargs)
-    return res
-
-
-def selection_grow_clust_deep(input_smi_fname, index_tanimoto, mol_scores, dname, target_fname_pdbqt, ntop,
-                              mw, bonds, ncpu, **kwargs):
-    d = get_simple_dict(input_smi_fname)
-    clusters = gen_cluster_subset_algButina(input_smi_fname, index_tanimoto, mol_scores)
-    sorted_clust = select_clust(clusters, d, mw, bonds)
-    res = None
-    if sorted_clust:
-        res = grow_mols_deep(sorted_clust, dname, target_fname_pdbqt, ntop, ncpu=ncpu, **kwargs)
-    return res
-
-
-def make_iteration(input_smi_fname, output_smi_fname, iteration, target_fname_pdbqt,
-                   output_db_connection, db_fname,
-                   ntop, rmsd, bonds, alg_type, docking_dir, protein_setup, ncpu, vina_path, python_path, vina_script_dir,
-                   index_tanimoto=None, mw=500, **kwargs):
-    dname = os.path.dirname(input_smi_fname)
-
-    smi_data = get_smi_data(output_db_connection, iteration - 1)
-
-
-    if iteration == 1 and docking_dir is not None:
-        all_files = os.listdir(docking_dir)
-        for file in all_files:
-            shutil.copy(os.path.join(docking_dir, file), os.path.join(dname, file))
-
-    else:
-        convert_smi_to_pdb2(smi_data, dname, output_db_connection, iteration=iteration)
-        prep_ligands(dname, python_path, vina_script_dir, ncpu, db_fname=db_fname, iteration=iteration)
-        dock_ligands(dname, target_fname_pdbqt, protein_setup, vina_path, ncpu)
-
-    if glob.glob(os.path.join(dname, '*_dock.pdbqt')):
-        mol_scores = get_mol_scores(dname, db_fname=db_fname, iteration=iteration)
-        update_res_db(output_db_connection, mol_scores, iteration=iteration)
-        if iteration != 1:
-            mol_scores = {k: v[0] for k, v in mol_scores.items() if v[1] and v[1] <= rmsd}
-
-
-        if alg_type == 1:
-            res = selection_grow_greedy(mol_scores=mol_scores, smi_data=smi_data, ntop=ntop, mw=mw, bonds=bonds,
-                                        target_fname_pdbqt=target_fname_pdbqt, dname=dname, ncpu=ncpu, **kwargs)
-        elif alg_type == 2:
-            res = selection_grow_clust_deep(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
-                                            mol_scores=mol_scores, dname=dname, mw=mw, bonds=bonds,
-                                            target_fname_pdbqt=target_fname_pdbqt, ntop=ntop, ncpu=ncpu, **kwargs)
-        elif alg_type == 3:
-            res = selection_grow_clust(input_smi_fname=input_smi_fname, index_tanimoto=index_tanimoto,
-                                       mol_scores=mol_scores, ntop=ntop, mw=mw, bonds=bonds, target_fname_pdbqt=target_fname_pdbqt,
-                                       dname=dname, ncpu=ncpu, **kwargs)
+    data = []
+    make_docking = True
+    conn = sqlite3.connect(db_fname)
+    try:
+        if fname.lowercase().endswith('.smi') or fname.lowercase().endswith('.smiles'):
+            with open(fname) as f:
+                for i, line in enumerate(f):
+                    tmp = line.strip().split()
+                    smi = tmp[0]
+                    name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
+                    data.append((name, 0, smi, None, None, None, None, None, None))
+        elif fname.lowercase().endswith('.sdf'):
+            make_docking = False
+            for i, mol in enumerate(Chem.SDMolSupplier(fname)):
+                if mol:
+                    if not mol.GetProp('_Name'):
+                        name = '000-' + str(i).zfill(6)
+                        mol.SetProp('_Name', name)
+                        data.append((name, 0, Chem.MolToSmiles(mol, isomericSmiles=True), None, None, None, None, None, Chem.MolToMolBlock(mol)))
         else:
-            res = []
-    else:
-        res = grow_from_molecula(dname=dname, target_fname_pdbqt=target_fname_pdbqt, **kwargs)
+            raise ValueError('input file with fragments has unrecognizable extension. '
+                             'Only SMI, SMILES and SDF are allowed.')
+        insert_db(conn, data)
+    finally:
+        conn.close()
+    return make_docking
 
+
+def get_last_iter_from_db(db_fname):
+    """
+    Returns last successful iteration number (with non-NULL docking scores)
+    :param db_fname:
+    :return: iteration number
+    """
+    with sqlite3.connect(db_fname) as conn:
+        cur = conn.cursor()
+        res = list(cur.execute("SELECT iteration, MIN(docking_score) FROM mols GROUP BY iteration ORDER BY iteration"))
+        for iteration, score in reversed(res):
+            if score is not None:
+                return iteration
+
+
+def selection_grow_greedy(mols, conn, protein_pdbqt, ntop, ncpu=1, **kwargs):
+    """
+
+    :param mols:
+    :param conn:
+    :param protein_pdbqt:
+    :param ntop:
+    :param ncpu:
+    :param kwargs:
+    :return: dict of parent ids and lists of corresponding generated mols
+    """
+    selected_mols = select_top_mols(mols, conn, ntop)
+    res = __grow_mols(selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+    return res
+
+
+def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1, **kwargs):
+    """
+
+    :param mols:
+    :param conn:
+    :param tanimoto:
+    :param protein_pdbqt:
+    :param ntop:
+    :param ncpu:
+    :param kwargs:
+    :return: dict of parent ids and lists of corresponding generated mols
+    """
+    clusters = gen_cluster_subset_algButina(mols, tanimoto)
+    sorted_clusters = sort_clusters(conn, clusters)
+    # select top n mols from each cluster
+    selected_mols = []
+    mol_ids = get_mol_ids(mols)
+    mol_dict = dict(zip(mol_ids, mols))   # {mol_id: mol, ...}
+    for cluster in sorted_clusters:
+        for i in cluster[:ntop]:
+            selected_mols.append(mol_dict[i])
+    # grow selected mols
+    res = __grow_mols(selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+    return res
+
+
+def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1, **kwargs):
+    """
+
+    :param mols:
+    :param conn:
+    :param tanimoto:
+    :param protein_pdbqt:
+    :param ntop:
+    :param ncpu:
+    :param kwargs:
+    :return: dict of parent ids and lists of corresponding generated mols
+    """
+    res = dict()
+    clusters = gen_cluster_subset_algButina(mols, tanimoto)
+    sorted_clusters = sort_clusters(conn, clusters)
+    # create dict of named mols
+    mol_ids = get_mol_ids(mols)
+    mol_dict = dict(zip(mol_ids, mols))   # {mol_id: mol, ...}
+    # grow up to N top scored mols from each cluster
+    for cluster in sorted_clusters:
+        processed_mols = 0
+        for mol_id in cluster:
+            tmp = __grow_mol(mol_dict[mol_id], protein_pdbqt, ncpu=ncpu, **kwargs)
+            if tmp:
+                res[mol_id] = tmp
+                processed_mols += 1
+            if processed_mols == ntop:
+                break
+    return res
+
+
+def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
+                   ncpu, tmpdir, vina_path, python_path, vina_script_dir, make_docking=True, make_selection=True,
+                   **kwargs):
+
+    if make_docking:
+        tmpdir = os.path.join(tmpdir, f'iter{iteration}')
+        os.makedirs(tmpdir)
+        save_smi_to_pdb(conn, iteration, tmpdir)
+        prep_ligands(conn, tmpdir, python_path, vina_script_dir, ncpu)
+        dock_ligands(tmpdir, protein_pdbqt, protein_setup, vina_path, ncpu)
+        update_db(conn, tmpdir)
+        shutil.rmtree(tmpdir)
+
+    mol_ids = get_docked_mol_ids(conn, iteration)
+    mols = get_mols(conn, mol_ids)
+
+    if make_selection:
+
+        mols = filter_mols(mols, mw, rtb)
+        mols = filter_mols_by_rms(mols, conn, rmsd)
+
+        if mols:
+            if alg_type == 1:
+                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, ntop=ntop, ncpu=ncpu,
+                                            **kwargs)
+            elif alg_type == 2:
+                res = selection_grow_clust_deep(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
+                                                ntop=ntop, ncpu=ncpu, **kwargs)
+            elif alg_type == 3:
+                res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
+                                           ntop=ntop, ncpu=ncpu, **kwargs)
+    else:
+        res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
 
     if res:
-        res = [(i[0], i[1]) for i in res if MolWt(Chem.MolFromSmiles(i[0])) <= mw]
+
         data = []
         opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
-        for i, (smi, parent_id) in enumerate(res):
-            m = Chem.MolFromSmiles(smi)
-            isomers = tuple(EnumerateStereoisomers(m, options=opts))
+        nmols = -1
+        for parent_id, mols in res.items():
+            for mol in mols:
+                nmols += 1
+                isomers = tuple(EnumerateStereoisomers(mol, options=opts))
+                for i, m in enumerate(isomers):
+                    smi = Chem.MolToSmiles(m, isomericSmiles=True)
+                    mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
+                    data.append((mol_id, iteration, smi, parent_id, None, None, None, None, None))
+        insert_db(conn, data)
 
-            for st_numb, st_mol in enumerate(isomers):
-                st_smi = Chem.MolToSmiles(st_mol, isomericSmiles=True)
-                mol_id = str(iteration).zfill(3) + '-' + str(i).zfill(6) + '-' + str(st_numb).zfill(2)
-                data.append((mol_id, iteration, st_smi, parent_id, None, None, None))
-        insert_db(output_db_connection, data)
-
-        with open(output_smi_fname, 'wt') as f:
-            for item in data:
-                f.write('%s\t%s\n' % (item[2], item[0]))
         return True
 
     else:
@@ -585,91 +543,93 @@ def make_iteration(input_smi_fname, output_smi_fname, iteration, target_fname_pd
 
 def main():
     parser = argparse.ArgumentParser(description='Fragment growing within binding pocket with Autodock Vina.')
-    parser.add_argument('-i', '--input_frags', metavar='frags.smi', required=True,
-                        help='SMILES file with input fragments.')
+    parser.add_argument('-i', '--input_frags', metavar='FILENAME', required=False,
+                        help='SMILES file with input fragments or SDF file with 3D coordinates of pre-aligned input '
+                             'fragments (e.g. from PDB complexes). Optional argument.')
+    parser.add_argument('-o', '--output', metavar='FILENAME', required=True,
+                        help='SQLite DB with docking results. If an existed DB was supplied input fragments will be '
+                             'ignored if any and the program will continue docking from the last successful iteration.')
     parser.add_argument('-d', '--db', metavar='fragments.db', required=True,
-                        help='SQLite DB file with fragment replacements.')
+                        help='SQLite DB with fragment replacements.')
+    parser.add_argument('-r', '--radius', default=1, type=int,
+                        help='context radius for replacement.')
+    parser.add_argument('-m', '--min_freq', default=0, type=int,
+                        help='the frequency of occurrence of the fragment in the source database. Default: 0.')
+    parser.add_argument('--max_replacements', type=int, required=False, default=None,
+                        help='the maximum number of randomly chosen replacements. Default: None (all replacements).')
     parser.add_argument('-p', '--protein', metavar='protein.pdbqt', required=True,
                         help='input PDBQT file with a prepared protein.')
     parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True,
-                        help='input text file with docking setup.')
-    parser.add_argument('-o', '--output', metavar='DIR_NAME', required=True,
-                        help='output directory. It should not exist.')
-    parser.add_argument('--mgl_install_dir', metavar='DIR_NAME', required=True,
+                        help='input text file with Vina docking setup.')
+    parser.add_argument('--mgl_install_dir', metavar='DIRNAME', required=True,
                         help='path to the dir with installed MGLtools.')
     parser.add_argument('--vina', metavar='vina_path', required=True,
                         help='path to the vina executable.')
-    parser.add_argument('-n', '--ncpu', default=1, type=cpu_type,
-                        help='number of cpus. Default: 1.')
-    parser.add_argument('--docking_dir', metavar='DIR_NAME', required=False, default=None,
-                        help='path to the dir with files after docking.')
-    parser.add_argument('-r', '--radius', default=1, type=int,
-                        help='context radius for replacement.')
+    parser.add_argument('-t', '--algorithm', default=1, type=int,
+                        help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering, '
+                             '3 - clustering.')
     parser.add_argument('-mw', '--mol_weight', default=500, type=int,
                         help='maximum ligand weight')
-    parser.add_argument('-m', '--min_freq', default=0, type=int,
-                        help='the frequency of occurrence of the fragment in the source database.')
     parser.add_argument('-nt', '--ntop', type=int, required=False,
                         help='the number of the best molecules')
     parser.add_argument('-rm', '--rmsd', type=float, required=True,
                         help='ligand movement')
     parser.add_argument('-b', '--rotatable_bonds', type=int, required=True,
                         help='the number of rotatable bonds in ligand')
-    parser.add_argument('--max_replacements', type=int, required=False, default=None,
-                        help='the number of randomly chosen replacements')
-    parser.add_argument('-t', '--algorithm', default=1, type=int,
-                        help='the number of algorithm: 1 - greedy search, 2 - deep clustering, 3 - clustering.')
+    parser.add_argument('--tmpdir', metaver='DIRNAME', default=None,
+                        help='directory where temporary files will be stored. If omitted atmp dir will be created in '
+                             'the same location as output DB.')
+    parser.add_argument('-n', '--ncpu', default=1, type=cpu_type,
+                        help='number of cpus. Default: 1.')
 
     args = parser.parse_args()
 
-    # vina_path = './bin/autodock_vina_1_1_2_linux_x86/bin/vina'
     python_path = os.path.join(args.mgl_install_dir, 'bin/python')
     vina_script_dir = os.path.join(args.mgl_install_dir, 'MGLToolsPckgs/AutoDockTools/Utilities24/')
 
+    if args.tmpdir is None:
+        args.tmpdir = os.path.join(os.path.basename(os.path.abspath(args.output)),
+                                   ''.join(random.sample(string.ascii_lowercase, 6)))
+    os.makedirs(args.tmpdir)
+
+    # depending on input setup operations applied on the first iteration
+    # input      make_docking   make_selection
+    # SMILES             True             True
+    # 3D SDF            False            False
+    # existed DB        False             True
     if os.path.exists(args.output):
-        raise ValueError('Output dir already exists. Please specify non-existing dir to store output.')
+        make_docking = False
+        make_selection = True
+        iteration = get_last_iter_from_db(args.output) + 1
+    else:
+        create_db(args.output)
+        make_docking = insert_starting_structures_to_db(args.input, args.output)
+        make_selection = make_docking
+        iteration = 1
 
-    os.makedirs(args.output)
-    dname = os.path.join(args.output, 'iter_1')
-    os.makedirs(dname)
-
-    input_smi_fname = os.path.join(dname, 'input.smi')
-    shutil.copyfile(args.input_frags, input_smi_fname)
-
-    output_db = os.path.join(args.output, 'output.db')
-    print('output_db', output_db)
-
-    conn = sqlite3.connect(output_db)
-    create_db(conn)
-
-    iteration = 1
-
-    insert_starting_smi_to_db(input_smi_fname, conn)
+    conn = sqlite3.connect(args.output)
 
     while True:
 
-        output_dname = os.path.abspath(
-            os.path.join(os.path.dirname(input_smi_fname), '..', 'iter_%i' % (iteration + 1)))
-        os.makedirs(output_dname)
-        output_smi_fname = os.path.join(output_dname, 'input.smi')
         index_tanimoto = 0.9  # required for alg 2 and 3
-        res = make_iteration(input_smi_fname=input_smi_fname, output_smi_fname=output_smi_fname,
-                             iteration=iteration, target_fname_pdbqt=args.protein,
-                             output_db_connection=conn, db_fname=output_db, ntop=args.ntop, rmsd=args.rmsd,
-                             bonds=args.rotatable_bonds, alg_type=args.algorithm,
-                             index_tanimoto=index_tanimoto, mw=args.mol_weight, docking_dir=args.docking_dir,
-                             protein_setup=args.protein_setup, ncpu=args.ncpu, vina_path=args.vina,
-                             python_path=python_path, vina_script_dir=vina_script_dir, db_name=args.db,
-                             radius=args.radius, min_freq=args.min_freq, min_atoms=1, max_atoms=10,
+        res = make_iteration(conn=conn, iteration=iteration, protein_pdbqt=args.protein,
+                             protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
+                             mw=args.mol_weight, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
+                             ncpu=args.ncpu, tmpdir=args.tmpdir, vina_path=args.vina, python_path=python_path,
+                             vina_script_dir=vina_script_dir, make_docking=make_docking, make_selection=make_selection,
+                             db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=1, max_atoms=10,
                              max_replacements=args.max_replacements)
+        make_docking = True
+        make_selection = True
 
         if res:
             iteration += 1
-            input_smi_fname = output_smi_fname
             if args.algorithm in [2, 3]:
                 index_tanimoto -= 0.05
         else:
             break
+
+    shutil.rmtree(args.tmpdir)
 
 
 if __name__ == '__main__':
