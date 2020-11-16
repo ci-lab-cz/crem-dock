@@ -284,7 +284,7 @@ def gen_cluster_subset_algButina(mols, tanimoto):
         distance_matrix = DataStructs.BulkTanimotoSimilarity(fps[i], fps[:i])
         dists.extend([1 - x for x in distance_matrix])
     # returns tuple of tuples with sequential numbers of compounds in each cluster
-    cs = Butina.ClusterData(dists, len(fps), tanimoto, isDistData=True)
+    cs = Butina.ClusterData(dists, len(fps), 1 - tanimoto, isDistData=True)
     # replace sequential ids with actual mol ids
     output = tuple((dict_index[y] for y in x) for x in cs)
     return output
@@ -577,7 +577,7 @@ def main():
     parser.add_argument('-b', '--rotatable_bonds', type=int, required=True,
                         help='the number of rotatable bonds in ligand')
     parser.add_argument('--tmpdir', metaver='DIRNAME', default=None,
-                        help='directory where temporary files will be stored. If omitted atmp dir will be created in '
+                        help='directory where temporary files will be stored. If omitted tmp dir will be created in '
                              'the same location as output DB.')
     parser.add_argument('-n', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus. Default: 1.')
