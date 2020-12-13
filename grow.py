@@ -570,7 +570,14 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         for parent_id, mols in res.items():
             for mol in mols:
                 nmols += 1
-                isomers = tuple(EnumerateStereoisomers(mol, options=opts))
+                try:
+                    isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
+                except RuntimeError:
+                    for bond in mol[1].GetBonds():
+                        print(bond.GetBondType())
+                        if bond.GetStereo() == Chem.BondStereo.STEREOANY:
+                            bond.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
+                    isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
                 for i, m in enumerate(isomers):
                     smi = Chem.MolToSmiles(m, isomericSmiles=True)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
