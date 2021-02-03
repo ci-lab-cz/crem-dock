@@ -2,6 +2,7 @@ from os.path import join, exists
 from os import makedirs
 from functools import partial
 import argparse
+from sys import exc_info
 from multiprocessing.dummy import Pool
 from multiprocessing import cpu_count
 from rdkit import Chem
@@ -10,6 +11,28 @@ from rdkit.Chem import AllChem
 
 def save_to_pdb(smi, fname):
     '''
+    Convert smi to PDB and save to file
+    :param smi: smiles
+    :param fname: filename
+    :return: None
+    '''
+    mol = Chem.MolFromSmiles(smi)
+    if mol is not None:
+        mol = Chem.AddHs(mol)
+        try:
+            res = AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+            if res == 0:
+                pdb = Chem.MolToPDBBlock(mol)
+                with open(fname, 'wt') as f:
+                    f.write(pdb)
+        except:
+            print('Embedding problem of', smi)
+    else:
+        print('Conversion problem of', smi)
+
+
+def save_to_pdb2(child_mol, parent_mol, fname):
+    '''
     Convert smi to PDB and save pathdir/id_frag.pdb
     :param smi: str(smiles)
     :param fname: str(filename)
@@ -17,18 +40,20 @@ def save_to_pdb(smi, fname):
     '''
     # convert to 3D coord
     try:
-        mol = Chem.MolFromSmiles(smi)
-        mol = Chem.AddHs(mol)
-        # compute coord
-        AllChem.EmbedMolecule(mol, AllChem.ETKDG())
+        mol = AllChem.ConstrainedEmbed(Chem.AddHs(child_mol), parent_mol)
         mol = Chem.MolToPDBBlock(mol)
-        # print(id_frag, 'Done')
-    except:
-        print('Problem convertation of', smi)
-        return None
-
+    except ValueError as e:
+        print("Unexpected error1:", e)
+        try:
+            mol = AllChem.ConstrainedEmbed(child_mol, parent_mol)
+            mol = Chem.AddHs(mol, addCoords=True)
+            mol = Chem.MolToPDBBlock(mol)
+        except ValueError as e:
+            print("Unexpected error2:", e)
+            return None
     with open(fname, 'wt') as pdb:
         pdb.write(mol)
+        print('Done')
 
 
 def main(input_fname, output_dname, ncpu):
