@@ -137,29 +137,22 @@ def update_db(conn, dname):
 
         # get mol block for the first pose
         mol_id = os.path.basename(fname).replace('_dock.pdbqt', '')
-        print('mol_id', mol_id)
         smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
 
-        print('smi', smi)
         mol_block = None
         mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('MODEL')[1].split('\n')]),
-                                   removeHs=True)  ###
+                                   removeHs=True)
 
-        print('mol', mol)
         if mol:
             mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
             mol.SetProp('_Name', mol_id)
             mol_block = Chem.MolToMolBlock(mol)
-            print('mol_block', mol_block)
 
         # get atoms
         parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
         if parent_id:
             parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
-            print('parent_mol_block', parent_mol_block)
             parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-
-            #             get rmsd
             rms = get_rmsd(mol, parent_mol)
         else:
             atoms, rms = None, None
@@ -570,11 +563,12 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         for parent_id, mols in res.items():
             for mol in mols:
                 nmols += 1
+                # this is a workaround for rdkit issue - if a double bond has STEREOANY it will cause errors at
+                # stereoisomer enumeration, we replace STEREOANY with STEREONONE in these cases
                 try:
                     isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
                 except RuntimeError:
                     for bond in mol[1].GetBonds():
-                        print(bond.GetBondType())
                         if bond.GetStereo() == Chem.BondStereo.STEREOANY:
                             bond.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
                     isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
