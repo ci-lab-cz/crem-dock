@@ -4,8 +4,11 @@ import shutil
 import argparse
 import random
 import string
-from numpy.linalg import norm
 import sqlite3
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+from numpy.linalg import norm
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
@@ -516,6 +519,61 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1,
                 break
     return res
 
+def identify_pareto(df, tmpdir, iteration):
+    """
+    Return ids of mols on pareto front
+    :param df:
+    :param tmpdir:
+    :param iteration:
+    :return:
+    """
+    df.sort_values(0, inplace=True)
+    scores = df.values
+    population_size = scores.shape[0]
+    population_ids = df.index
+    pareto_front = np.ones(population_size, dtype=bool)
+    for i in range(population_size):
+        for j in range(population_size):
+            if all(scores[j] <= scores[i]) and any(scores[j] < scores[i]):
+                pareto_front[i] = 0
+                break
+    pareto = df.loc[pareto_front]
+    x_all, y_all = df[0], df[1]
+    x_pareto, y_pareto = pareto[0], pareto[1]
+    plt.figure(figsize=(10, 10))
+    plt.scatter(x_all, y_all)
+    plt.plot(x_pareto, y_pareto, color='r')
+    # plt.xlabel('Docking_score')
+    # plt.ylabel('Mol_wweight')
+    plt.savefig(tmpdir + '.jpg')
+    return population_ids[pareto_front].tolist()
+
+
+def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, ncpu, tmpdir, iteration, **kwargs):
+    """
+
+    :param mols:
+    :param conn:
+    :param mw:
+    :param rtb:
+    :param protein_pdbqt:
+    :param ncpu:
+    :param tmpdir:
+    :param iteration:
+    :param kwargs:
+    :return: dict of parent ids and lists of corresponding generated mols
+    """
+    mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1]
+    mol_ids = get_mol_ids(mols)
+    mol_dict = dict(zip(mol_ids, mols))
+    scores = get_mol_scores(conn, mol_ids)
+    scores_mw = {mol_id: [score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
+    pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
+    mols_pareto = identify_pareto(pareto_front_df, tmpdir, iteration)
+    mols = get_mols(conn, mols_pareto)
+    res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+    return res
+
 
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, vina_path, python_path, vina_script_dir, make_docking=True, make_selection=True,
@@ -548,6 +606,10 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
             elif alg_type == 3:
                 res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
                                            ntop=ntop, ncpu=ncpu, **kwargs)
+            elif alg_type == 4:
+                res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
+                                          ncpu=ncpu, tmpdir=tmpdir, iteration=iteration, **kwargs)
+
         else:
             res = []
 
@@ -611,7 +673,7 @@ def main():
                         help='path to the vina executable.')
     parser.add_argument('-t', '--algorithm', default=1, type=int,
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering, '
-                             '3 - clustering.')
+                             '3 - clustering, 4 - Pareto front.')
     parser.add_argument('-mw', '--mol_weight', default=500, type=int,
                         help='maximum ligand weight')
     parser.add_argument('-nt', '--ntop', type=int, required=False,
