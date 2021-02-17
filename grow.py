@@ -183,7 +183,8 @@ def get_rmsd(child_mol, parent_mol):
     match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
     best_rms = float('inf')
     for ids in match_ids:
-        rms = norm(child_mol.GetConformer().GetPositions()[ids,] - parent_mol.GetConformer().GetPositions())
+        diff = np.array(child_mol.GetConformer().GetPositions()[ids,]) - np.array(parent_mol.GetConformer().GetPositions())
+        rms = np.sqrt((diff ** 2).sum() / len(diff))
         if rms < best_rms:
             best_rms = rms
     return best_rms
@@ -573,6 +574,7 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, ncpu, tmpdir, iterat
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df, tmpdir, iteration)
     mols = get_mols(conn, mols_pareto)
+    mols = [Chem.MolFromMolBlock(mol) for mol in mols]
     res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
     return res
 
