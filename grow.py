@@ -112,6 +112,19 @@ def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu)
                                                                                                               target_setup_fname))
 
 
+def get_score(pdb_block):
+    """
+    Return correct docking score
+    :param pdb_block:
+    :return:
+    """
+    score = float(pdb_block.split()[5])
+    active_torsions = int(pdb_block.split('active torsions')[0][-2])
+    all_torsions = int(pdb_block.split('TORSDOF')[1].split('\n')[0])
+    score_correct = score * (1 + 0.0585 * active_torsions) / (1 + 0.0585 * all_torsions)
+    return score_correct
+
+
 def update_db(conn, dname):
     """
     Insert score, rmsd, fixed bonds string, pdb and mol blocks of molecules having a corresponding pdbqt file in the
@@ -128,7 +141,7 @@ def update_db(conn, dname):
         pdb_block = open(fname).read()
 
         # get score
-        score = pdb_block.split()[5]
+        score = get_score(pdb_block)
 
         # get mol block for the first pose
         mol_id = os.path.basename(fname).replace('_dock.pdbqt', '')
