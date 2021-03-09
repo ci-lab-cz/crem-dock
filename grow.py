@@ -84,29 +84,21 @@ def save_smi_to_pdb(conn, iteration, tmpdir):
             Smi2PDB.save_to_pdb2(mol, parent_mol, os.path.join(tmpdir, f'{mol_id}.pdb'))
 
 
-
 def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
-    """
-    Prepares ligands and save pdbqt files with the same name as pdb files in the temporary directory
-    :param conn: docking DB connection
-    :param dname: temporary dir with pdb files
-    :param iteration: number of iteration
-    :param python_path:
-    :param vina_script_dir:
-    :param ncpu:
-    :return:
-    """
-
-    for fname in glob.glob(os.path.join(dname, '*.pdb')):
+    def supply_lig_prep(conn, dname, python_path, vina_script_dir):
         cur = conn.cursor()
-        mol_id = os.path.basename(os.path.splitext(fname)[0])
-        atoms = list(cur.execute(f"SELECT atoms FROM mols WHERE id = '{mol_id}'"))[0][0]
+        for fname in glob.glob(os.path.join(dname, '*.pdb')):
+            mol_id = os.path.basename(os.path.splitext(fname)[0])
+            atoms = list(cur.execute(f"SELECT atoms FROM mols WHERE id = '{mol_id}'"))[0][0]
+            if not atoms:
+                atoms = ''
+            yield fname, os.path.abspath(
+                os.path.splitext(fname)[0] + '.pdbqt'), python_path, vina_script_dir + 'prepare_ligand4.py', atoms
 
-        if not atoms:
-            atoms = ''
-
-        Docking.prepare_ligand(fname, fname.rsplit('.', 1)[0] + '.pdbqt', python_path,
-                               vina_script_dir + 'prepare_ligand4.py', atoms)
+    pool = Pool(ncpu)
+    pool.imap_unordered(Docking.prepare_ligands_mp, list(supply_lig_prep(conn, dname, python_path, vina_script_dir)))
+    pool.close()
+    pool.join()
 
 
 def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu):
@@ -147,20 +139,22 @@ def update_db(conn, dname):
                                    removeHs=True)
 
         if mol:
-            mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
-            mol.SetProp('_Name', mol_id)
-            mol_block = Chem.MolToMolBlock(mol)
-
+            try:
+                mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
+                mol.SetProp('_Name', mol_id)
+                mol_block = Chem.MolToMolBlock(mol)
+            except:
+                mol = None
             # get atoms
             parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
-            if parent_id:
+            if parent_id and mol:
                 parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
                 parent_mol = Chem.MolFromMolBlock(parent_mol_block)
                 rms = get_rmsd(mol, parent_mol)
             else:
                 rms = None
         else:
-            atoms, rms = None, None
+            rms = None
 
         cur.execute("""UPDATE mols
                            SET pdb_block = ?,
@@ -183,7 +177,8 @@ def get_rmsd(child_mol, parent_mol):
     match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
     best_rms = float('inf')
     for ids in match_ids:
-        diff = np.array(child_mol.GetConformer().GetPositions()[ids,]) - np.array(parent_mol.GetConformer().GetPositions())
+        diff = np.array(child_mol.GetConformer().GetPositions()[ids,]) - np.array(
+            parent_mol.GetConformer().GetPositions())
         rms = np.sqrt((diff ** 2).sum() / len(diff))
         if rms < best_rms:
             best_rms = rms
@@ -522,7 +517,8 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1,
                 break
     return res
 
-def identify_pareto(df, tmpdir, iteration):
+
+def identify_pareto(df, tmpdir):
     """
     Return ids of mols on pareto front
     :param df:
