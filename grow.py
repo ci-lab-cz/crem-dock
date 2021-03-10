@@ -121,7 +121,7 @@ def get_score(pdb_block):
     score = float(pdb_block.split()[5])
     active_torsions = int(pdb_block.split('active torsions')[0][-2])
     all_torsions = int(pdb_block.split('TORSDOF')[1].split('\n')[0])
-    score_correct = score * (1 + 0.0585 * active_torsions) / (1 + 0.0585 * all_torsions)
+    score_correct = round(score * (1 + 0.0585 * active_torsions) / (1 + 0.0585 * all_torsions), 2)
     return score_correct
 
 
