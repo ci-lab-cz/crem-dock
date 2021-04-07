@@ -31,6 +31,10 @@ def save_to_pdb(smi, fname):
         print('Conversion problem of', smi)
 
 
+def save_to_pdb_mp(items):
+    return save_to_pdb(*items)
+
+
 def save_to_pdb2(child_mol, parent_mol, fname):
     '''
     Convert smi to PDB and save pathdir/id_frag.pdb
@@ -54,6 +58,10 @@ def save_to_pdb2(child_mol, parent_mol, fname):
     with open(fname, 'wt') as pdb:
         pdb.write(mol)
         print('Done')
+
+
+def save_to_pdb2_mp(items):
+    return save_to_pdb2(*items)
 
 
 def main(input_fname, output_dname, ncpu):
