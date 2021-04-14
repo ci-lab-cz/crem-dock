@@ -241,7 +241,7 @@ def get_mols(conn, mol_ids):
     """
     cur = conn.cursor()
     sql = f'SELECT mol_block FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-    return [items[0] for items in cur.execute(sql, mol_ids)]
+    return [Chem.MolFromMolBlock(items[0]) for items in cur.execute(sql, mol_ids)]
 
 
 def get_mol_scores(conn, mol_ids):
@@ -278,7 +278,6 @@ def filter_mols(mols, mw=None, rtb=None):
     """
     output = []
     for mol in mols:
-        mol = Chem.MolFromMolBlock(mol)
         if (mw is None or MolWt(mol) <= mw) and (rtb is None or CalcNumRotatableBonds(mol) <= rtb):
             output.append(mol)
     return output
@@ -606,7 +605,6 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, ncpu, tmpdir, iterat
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df, tmpdir)
     mols = get_mols(conn, mols_pareto)
-    mols = [Chem.MolFromMolBlock(mol) for mol in mols]
     res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
     return res
 
@@ -625,6 +623,8 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
 
     mol_ids = get_docked_mol_ids(conn, iteration)
     mols = get_mols(conn, mol_ids)
+
+    res = []
 
     if make_selection:
 
@@ -646,11 +646,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
                                           ncpu=ncpu, tmpdir=tmpdir, iteration=iteration, **kwargs)
 
-        else:
-            res = []
-
     else:
-        mols = [Chem.MolFromMolBlock(mol) for mol in mols]
         res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
 
     if res:
