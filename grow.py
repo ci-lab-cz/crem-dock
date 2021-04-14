@@ -37,7 +37,7 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def get_сommon_atoms(mol_name, child_mol, parent_mol, conn):
+def set_common_atoms(mol_name, child_mol, parent_mol, conn):
     '''
 
     :param mol_name:
@@ -63,61 +63,50 @@ def get_сommon_atoms(mol_name, child_mol, parent_mol, conn):
     conn.commit()
 
 
-# def supply_save_smi_to_pdb(pars, smi, parent_mols, tmpdir, conn):
-#     pars_smiH = {i: j for i, j in zip(pars.keys(), smi)}
-#     for mol_id, parent_id in pars.items():
-#         smi = pars_smiH[mol_id]
-#         mol = Chem.MolFromSmiles(smi)
-#         parent_mol = parent_mols[parent_id]
-#         get_сommon_atoms(mol_id, mol, parent_mol, conn)
-#         return mol, parent_mol, os.path.join(tmpdir, f'{mol_id}.pdb')
-
-
 def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
     '''
-
+    Creates file with SMILES which is supplied to Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
+    Parse output and generate PDB files stored in the specified directory. Updates the common atoms field in DB
+    (if iteration > 1)
     :param conn:
     :param iteration:
     :param tmpdir:
     :param ncpu:
     :return:
     '''
-    cmd_run = "cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
+    fname = os.path.join(tmpdir, '1.smi')
     cur = conn.cursor()
-    fname = os.path.join(tmpdir, 'smiles_proton.smi')
-    mols = dict(cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'"))
-    mol_ids = list(mols.keys())
+    smiles = list(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'"))
+    mol_ids = [i for smi, i in smiles]
     with open(fname, 'wt') as f:
-        for k, v in mols.items():
-            f.write('%s\t%s\n' % (v, k))
-    smi = subprocess.check_output(cmd_run.format(fname=fname), shell=True).decode().split()
+        f.write('%s\t%s\n' % smiles)
+    cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
+    smi_output = subprocess.check_output(cmd_run, shell=True).decode().split()
+
     pool = Pool(ncpu)
+
     if iteration == 1:
-        pool.map(Smi2PDB.save_to_pdb_mp, [(i, os.path.join(tmpdir, f'{j}.pdb')) for i, j in
-                                                 zip(smi, mol_ids)])
+        pool.imap_unordered(Smi2PDB.save_to_pdb_mp, [(i, os.path.join(tmpdir, f'{j}.pdb')) for i, j in zip(smi_output, mol_ids)])
         pool.close()
         pool.join()
 
     else:
         pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
-        parent_ids = list(pars.values())
-        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})'
-        parent_mol_blocks = dict(cur.execute(sql, parent_ids))
-        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in parent_mol_blocks.items()}
-        parents_mols = {i: parent_mols[j] for i, j in pars.items()}
-        p_mols = list(parents_mols.values())
-        mols = [Chem.MolFromSmiles(i) for i in smi]
-
-        pool.map(Smi2PDB.save_to_pdb2_mp, [(i, j, os.path.join(tmpdir, f'{k}.pdb')) for i, j, k in zip(mols, p_mols, mol_ids)])
+        parent_ids = set(pars.values())
+        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join(parent_ids)})'
+        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in cur.execute(sql)}
+        mols = [Chem.MolFromSmiles(i) for i in smi_output]
+        pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, [(mol, parent_mols[pars[i]], os.path.join(tmpdir, f'{i}.pdb'))
+                                                      for i, mol in zip(mol_ids, mols)])
         pool.close()
         pool.join()
 
-        for name, child_mol, parent_mol in zip(mol_ids, mols, p_mols):
-            get_сommon_atoms(name, child_mol, parent_mol, conn)
-
+        for name, child_mol, parent_mol in zip(mol_ids, mols):
+            set_common_atoms(name, child_mol, parent_mols[pars[name]], conn)
 
 
 def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
+
     def supply_lig_prep(conn, dname, python_path, vina_script_dir):
         cur = conn.cursor()
         for fname in glob.glob(os.path.join(dname, '*.pdb')):
