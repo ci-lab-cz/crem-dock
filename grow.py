@@ -452,11 +452,12 @@ def insert_starting_structures_to_db(fname, db_fname):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
                 if mol:
-                    if not mol.GetProp('_Name'):
+                    name = mol.GetProp('_Name')
+                    if not name:
                         name = '000-' + str(i).zfill(6)
                         mol.SetProp('_Name', name)
-                        data.append((name, 0, Chem.MolToSmiles(mol, isomericSmiles=True), None, None, None, None, None,
-                                     Chem.MolToMolBlock(mol)))
+                    data.append((name, 0, Chem.MolToSmiles(mol, isomericSmiles=True), None, None, None, None, None,
+                                 Chem.MolToMolBlock(mol)))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
