@@ -33,83 +33,88 @@ def sort_two_lists(primary, secondary):
     return map(list, zip(*paired_sorted))  # two lists
 
 
-def read_input(fname):
-    with open(fname) as f:
-        for line in f:
-            yield line.split()[1]
-
-
 def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def get_сommon_atoms(conn, iteration):
-    """
-    Returns common atom numbers between child and parent molecules
-    :param conn: docking DB connection
-    :param mol_name: id child molecule
-    :param child_mol: Mol
-    :param parent_mol: Mol
+def get_сommon_atoms(mol_name, child_mol, parent_mol, conn):
+    '''
+
+    :param mol_name:
+    :param child_mol:
+    :param parent_mol:
+    :param conn:
     :return:
-    """
-    if iteration != 1:
-        cur = conn.cursor()
-        pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
-        for mol_id, parent_id in pars.items():
-            smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
-            child_mol = Chem.MolFromSmiles(smi)
-            parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
-            parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-            ids = child_mol.GetSubstructMatch(parent_mol)
-            atoms = []
-            for i, j in combinations(ids, 2):
-                bond = child_mol.GetBondBetweenAtoms(i, j)
-                if bond is not None:
-                    atoms.append(f'{i}_{j}')
-            atoms = '_'.join(atoms)
-            cur.execute("""UPDATE mols
-                               SET atoms = ?
-                               WHERE
-                                   id = ?
-                            """, (atoms, mol_id))
-            conn.commit()
-
-
-def supply_save_smi_to_pdb(conn, iteration, smi_pHprotonate, tmpdir):
+    '''
     cur = conn.cursor()
-    pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
-    pars_smiH = {i: j for i, j in zip(pars.keys(), smi_pHprotonate)}
-    for mol_id, parent_id in pars.items():
-        smi = pars_smiH[mol_id]
-        mol = Chem.MolFromSmiles(smi)
-        parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
-        parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-        yield mol, parent_mol, os.path.join(tmpdir, f'{mol_id}.pdb')
+
+    ids = child_mol.GetSubstructMatch(parent_mol)
+    atoms = []
+    for i, j in combinations(ids, 2):
+        bond = child_mol.GetBondBetweenAtoms(i, j)
+        if bond is not None:
+            atoms.append(f'{i}_{j}')
+    atoms = '_'.join(atoms)
+    cur.execute("""UPDATE mols
+                       SET atoms = ?
+                       WHERE
+                           id = ?
+                    """, (atoms, mol_name))
+    conn.commit()
+
+
+# def supply_save_smi_to_pdb(pars, smi, parent_mols, tmpdir, conn):
+#     pars_smiH = {i: j for i, j in zip(pars.keys(), smi)}
+#     for mol_id, parent_id in pars.items():
+#         smi = pars_smiH[mol_id]
+#         mol = Chem.MolFromSmiles(smi)
+#         parent_mol = parent_mols[parent_id]
+#         get_сommon_atoms(mol_id, mol, parent_mol, conn)
+#         return mol, parent_mol, os.path.join(tmpdir, f'{mol_id}.pdb')
 
 
 def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
-    """
-    :param smi_data: dict {mol_id: smi}
-    :param output_dname:
+    '''
+
+    :param conn:
+    :param iteration:
+    :param tmpdir:
+    :param ncpu:
     :return:
-    """
+    '''
     cmd_run = "cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
     cur = conn.cursor()
     fname = os.path.join(tmpdir, 'smiles_proton.smi')
     mols = dict(cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'"))
+    mol_ids = list(mols.keys())
     with open(fname, 'wt') as f:
         for k, v in mols.items():
             f.write('%s\t%s\n' % (v, k))
-    smi_pHprotonate = subprocess.check_output(cmd_run.format(fname=fname), shell=True).decode().split()
+    smi = subprocess.check_output(cmd_run.format(fname=fname), shell=True).decode().split()
     pool = Pool(ncpu)
     if iteration == 1:
-        pool.imap_unordered(Smi2PDB.save_to_pdb_mp, [(i, os.path.join(tmpdir, f'{j}.pdb')) for i, j in
-                                                 zip(smi_pHprotonate, read_input(fname))])
+        pool.map(Smi2PDB.save_to_pdb_mp, [(i, os.path.join(tmpdir, f'{j}.pdb')) for i, j in
+                                                 zip(smi, mol_ids)])
+        pool.close()
+        pool.join()
 
     else:
-        pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, list(supply_save_smi_to_pdb(conn, iteration, smi_pHprotonate, tmpdir)))
-    pool.close()
-    pool.join()
+        pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
+        parent_ids = list(pars.values())
+        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})'
+        parent_mol_blocks = dict(cur.execute(sql, parent_ids))
+        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in parent_mol_blocks.items()}
+        parents_mols = {i: parent_mols[j] for i, j in pars.items()}
+        p_mols = list(parents_mols.values())
+        mols = [Chem.MolFromSmiles(i) for i in smi]
+
+        pool.map(Smi2PDB.save_to_pdb2_mp, [(i, j, os.path.join(tmpdir, f'{k}.pdb')) for i, j, k in zip(mols, p_mols, mol_ids)])
+        pool.close()
+        pool.join()
+
+        for name, child_mol, parent_mol in zip(mol_ids, mols, p_mols):
+            get_сommon_atoms(name, child_mol, parent_mol, conn)
+
 
 
 def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
@@ -583,8 +588,8 @@ def identify_pareto(df, tmpdir):
     plt.figure(figsize=(10, 10))
     plt.scatter(x_all, y_all)
     plt.plot(x_pareto, y_pareto, color='r')
-    # plt.xlabel('Docking_score')
-    # plt.ylabel('Mol_wweight')
+    plt.xlabel('Docking_score')
+    plt.ylabel('Mol_wweight')
     plt.savefig(tmpdir + '.jpg')
     return population_ids[pareto_front].tolist()
 
@@ -623,7 +628,6 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         tmpdir = os.path.abspath(os.path.join(tmpdir, f'iter{iteration}'))
         os.makedirs(tmpdir)
         save_smi_to_pdb(conn, iteration, tmpdir, ncpu)
-        get_сommon_atoms(conn, iteration)
         prep_ligands(conn, tmpdir, python_path, vina_script_dir, ncpu)
         dock_ligands(tmpdir, protein_pdbqt, protein_setup, vina_path, ncpu)
         update_db(conn, tmpdir)
