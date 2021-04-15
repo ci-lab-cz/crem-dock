@@ -79,7 +79,7 @@ def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
     smiles = list(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'"))
     mol_ids = [i for smi, i in smiles]
     with open(fname, 'wt') as f:
-        f.write('%s\t%s\n' % smiles)
+        f.writelines('%s\t%s\n' % item for item in smiles)
     cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
     smi_output = subprocess.check_output(cmd_run, shell=True).decode().split()
 
@@ -92,16 +92,16 @@ def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
 
     else:
         pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
-        parent_ids = set(pars.values())
-        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join(parent_ids)})'
-        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in cur.execute(sql)}
+        parent_ids = list(set(pars.values()))
+        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})'
+        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in cur.execute(sql, parent_ids)}
         mols = [Chem.MolFromSmiles(i) for i in smi_output]
         pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, [(mol, parent_mols[pars[i]], os.path.join(tmpdir, f'{i}.pdb'))
                                                       for i, mol in zip(mol_ids, mols)])
         pool.close()
         pool.join()
 
-        for name, child_mol, parent_mol in zip(mol_ids, mols):
+        for name, child_mol in zip(mol_ids, mols):
             set_common_atoms(name, child_mol, parent_mols[pars[name]], conn)
 
 
