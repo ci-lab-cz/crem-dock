@@ -399,7 +399,7 @@ def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
     """
     res = dict()
     for mol in mols:
-        tmp = __grow_mol(mol, protein_pdbqt, h_dist_threshold=h_dist_threshold, **kwargs)
+        tmp = __grow_mol(mol, protein_pdbqt, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol.GetProp('_Name')] = tmp
     return res
@@ -546,7 +546,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1,
     for cluster in sorted_clusters:
         processed_mols = 0
         for mol_id in cluster:
-            tmp = __grow_mol(mol_dict[mol_id], protein_pdbqt, **kwargs)
+            tmp = __grow_mol(mol_dict[mol_id], protein_pdbqt, ncpu=ncpu, **kwargs)
             if tmp:
                 res[mol_id] = tmp
                 processed_mols += 1
