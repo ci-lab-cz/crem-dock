@@ -4,8 +4,11 @@ import shutil
 import argparse
 import random
 import string
-from numpy.linalg import norm
 import sqlite3
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import subprocess
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
@@ -34,15 +37,15 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def get_сommon_atoms(mol_name, child_mol, parent_mol, conn):
-    """
-    Returns common atom numbers between child and parent molecules
-    :param conn: docking DB connection
-    :param mol_name: id child molecule
-    :param child_mol: Mol
-    :param parent_mol: Mol
+def set_common_atoms(mol_name, child_mol, parent_mol, conn):
+    '''
+
+    :param mol_name:
+    :param child_mol:
+    :param parent_mol:
+    :param conn:
     :return:
-    """
+    '''
     cur = conn.cursor()
 
     ids = child_mol.GetSubstructMatch(parent_mol)
@@ -60,50 +63,64 @@ def get_сommon_atoms(mol_name, child_mol, parent_mol, conn):
     conn.commit()
 
 
-def save_smi_to_pdb(conn, iteration, tmpdir):
-    """
-    :param smi_data: dict {mol_id: smi}
-    :param output_dname:
+def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
+    '''
+    Creates file with SMILES which is supplied to Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
+    Parse output and generate PDB files stored in the specified directory. Updates the common atoms field in DB
+    (if iteration > 1)
+    :param conn:
+    :param iteration:
+    :param tmpdir:
+    :param ncpu:
     :return:
-    """
+    '''
+    fname = os.path.join(tmpdir, '1.smi')
     cur = conn.cursor()
+    smiles = list(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'"))
+    mol_ids = [i for smi, i in smiles]
+    with open(fname, 'wt') as f:
+        f.writelines('%s\t%s\n' % item for item in smiles)
+    cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
+    smi_output = subprocess.check_output(cmd_run, shell=True).decode().split()
+
+    pool = Pool(ncpu)
+
     if iteration == 1:
-        for mol_name, smi in cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'"):
-            Smi2PDB.save_to_pdb(smi, os.path.join(tmpdir, f'{mol_name}.pdb'))
+        pool.imap_unordered(Smi2PDB.save_to_pdb_mp, [(i, os.path.join(tmpdir, f'{j}.pdb')) for i, j in zip(smi_output, mol_ids)])
+        pool.close()
+        pool.join()
+
     else:
         pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
-        for mol_id, parent_id in pars.items():
-            smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
-            mol = Chem.MolFromSmiles(smi)
-            parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
-            parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-            get_сommon_atoms(mol_id, mol, parent_mol, conn)
-            Smi2PDB.save_to_pdb2(mol, parent_mol, os.path.join(tmpdir, f'{mol_id}.pdb'))
+        parent_ids = list(set(pars.values()))
+        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})'
+        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in cur.execute(sql, parent_ids)}
+        mols = [Chem.MolFromSmiles(i) for i in smi_output]
+        pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, [(mol, parent_mols[pars[i]], os.path.join(tmpdir, f'{i}.pdb'))
+                                                      for i, mol in zip(mol_ids, mols)])
+        pool.close()
+        pool.join()
 
+        for name, child_mol in zip(mol_ids, mols):
+            set_common_atoms(name, child_mol, parent_mols[pars[name]], conn)
 
 
 def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
-    """
-    Prepares ligands and save pdbqt files with the same name as pdb files in the temporary directory
-    :param conn: docking DB connection
-    :param dname: temporary dir with pdb files
-    :param iteration: number of iteration
-    :param python_path:
-    :param vina_script_dir:
-    :param ncpu:
-    :return:
-    """
 
-    for fname in glob.glob(os.path.join(dname, '*.pdb')):
+    def supply_lig_prep(conn, dname, python_path, vina_script_dir):
         cur = conn.cursor()
-        mol_id = os.path.basename(os.path.splitext(fname)[0])
-        atoms = list(cur.execute(f"SELECT atoms FROM mols WHERE id = '{mol_id}'"))[0][0]
+        for fname in glob.glob(os.path.join(dname, '*.pdb')):
+            mol_id = os.path.basename(os.path.splitext(fname)[0])
+            atoms = list(cur.execute(f"SELECT atoms FROM mols WHERE id = '{mol_id}'"))[0][0]
+            if not atoms:
+                atoms = ''
+            yield fname, os.path.abspath(
+                os.path.splitext(fname)[0] + '.pdbqt'), python_path, vina_script_dir + 'prepare_ligand4.py', atoms
 
-        if not atoms:
-            atoms = ''
-
-        Docking.prepare_ligand(fname, fname.rsplit('.', 1)[0] + '.pdbqt', python_path,
-                               vina_script_dir + 'prepare_ligand4.py', atoms)
+    pool = Pool(ncpu)
+    pool.imap_unordered(Docking.prepare_ligands_mp, list(supply_lig_prep(conn, dname, python_path, vina_script_dir)))
+    pool.close()
+    pool.join()
 
 
 def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu):
@@ -115,6 +132,19 @@ def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu)
                                      for i_fname, o_fname, target, setup, vina_script in supply_lig_dock_data(dname,
                                                                                                               target_fname_pdbqt,
                                                                                                               target_setup_fname))
+
+
+def get_score(pdb_block):
+    """
+    Return correct docking score
+    :param pdb_block:
+    :return:
+    """
+    score = float(pdb_block.split()[5])
+    active_torsions = int(pdb_block.split('active torsions')[0][-2])
+    all_torsions = int(pdb_block.split('TORSDOF')[1].split('\n')[0])
+    score_correct = round(score * (1 + 0.0585 * active_torsions) / (1 + 0.0585 * all_torsions), 2)
+    return score_correct
 
 
 def update_db(conn, dname):
@@ -133,7 +163,7 @@ def update_db(conn, dname):
         pdb_block = open(fname).read()
 
         # get score
-        score = pdb_block.split()[5]
+        score = get_score(pdb_block)
 
         # get mol block for the first pose
         mol_id = os.path.basename(fname).replace('_dock.pdbqt', '')
@@ -144,18 +174,22 @@ def update_db(conn, dname):
                                    removeHs=True)
 
         if mol:
-            mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
-            mol.SetProp('_Name', mol_id)
-            mol_block = Chem.MolToMolBlock(mol)
-
-        # get atoms
-        parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
-        if parent_id:
-            parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
-            parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-            rms = get_rmsd(mol, parent_mol)
+            try:
+                mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
+                mol.SetProp('_Name', mol_id)
+                mol_block = Chem.MolToMolBlock(mol)
+            except:
+                mol = None
+            # get atoms
+            parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
+            if parent_id and mol:
+                parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
+                parent_mol = Chem.MolFromMolBlock(parent_mol_block)
+                rms = get_rmsd(mol, parent_mol)
+            else:
+                rms = None
         else:
-            atoms, rms = None, None
+            rms = None
 
         cur.execute("""UPDATE mols
                            SET pdb_block = ?,
@@ -178,7 +212,9 @@ def get_rmsd(child_mol, parent_mol):
     match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
     best_rms = float('inf')
     for ids in match_ids:
-        rms = norm(child_mol.GetConformer().GetPositions()[ids,] - parent_mol.GetConformer().GetPositions())
+        diff = np.array(child_mol.GetConformer().GetPositions()[ids,]) - np.array(
+            parent_mol.GetConformer().GetPositions())
+        rms = np.sqrt((diff ** 2).sum() / len(diff))
         if rms < best_rms:
             best_rms = rms
     return best_rms
@@ -205,7 +241,7 @@ def get_mols(conn, mol_ids):
     """
     cur = conn.cursor()
     sql = f'SELECT mol_block FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-    return [items[0] for items in cur.execute(sql, mol_ids)]
+    return [Chem.MolFromMolBlock(items[0]) for items in cur.execute(sql, mol_ids)]
 
 
 def get_mol_scores(conn, mol_ids):
@@ -242,7 +278,6 @@ def filter_mols(mols, mw=None, rtb=None):
     """
     output = []
     for mol in mols:
-        mol = Chem.MolFromMolBlock(mol)
         if (mw is None or MolWt(mol) <= mw) and (rtb is None or CalcNumRotatableBonds(mol) <= rtb):
             output.append(mol)
     return output
@@ -416,11 +451,12 @@ def insert_starting_structures_to_db(fname, db_fname):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
                 if mol:
-                    if not mol.GetProp('_Name'):
+                    name = mol.GetProp('_Name')
+                    if not name:
                         name = '000-' + str(i).zfill(6)
                         mol.SetProp('_Name', name)
-                        data.append((name, 0, Chem.MolToSmiles(mol, isomericSmiles=True), None, None, None, None, None,
-                                     Chem.MolToMolBlock(mol)))
+                    data.append((name, 0, Chem.MolToSmiles(mol, isomericSmiles=True), None, None, None, None, None,
+                                 Chem.MolToMolBlock(mol)))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -517,13 +553,69 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1,
     return res
 
 
+def identify_pareto(df, tmpdir):
+    """
+    Return ids of mols on pareto front
+    :param df:
+    :param tmpdir:
+    :param iteration:
+    :return:
+    """
+    df.sort_values(0, inplace=True)
+    scores = df.values
+    population_size = scores.shape[0]
+    population_ids = df.index
+    pareto_front = np.ones(population_size, dtype=bool)
+    for i in range(population_size):
+        for j in range(population_size):
+            if all(scores[j] <= scores[i]) and any(scores[j] < scores[i]):
+                pareto_front[i] = 0
+                break
+    pareto = df.loc[pareto_front]
+    x_all, y_all = df[0], df[1]
+    x_pareto, y_pareto = pareto[0], pareto[1]
+    plt.figure(figsize=(10, 10))
+    plt.scatter(x_all, y_all)
+    plt.plot(x_pareto, y_pareto, color='r')
+    plt.xlabel('Docking_score')
+    plt.ylabel('Mol_wweight')
+    plt.savefig(tmpdir + '.jpg')
+    return population_ids[pareto_front].tolist()
+
+
+def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, ncpu, tmpdir, iteration, **kwargs):
+    """
+
+    :param mols:
+    :param conn:
+    :param mw:
+    :param rtb:
+    :param protein_pdbqt:
+    :param ncpu:
+    :param tmpdir:
+    :param iteration:
+    :param kwargs:
+    :return: dict of parent ids and lists of corresponding generated mols
+    """
+    mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1]
+    mol_ids = get_mol_ids(mols)
+    mol_dict = dict(zip(mol_ids, mols))
+    scores = get_mol_scores(conn, mol_ids)
+    scores_mw = {mol_id: [score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
+    pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
+    mols_pareto = identify_pareto(pareto_front_df, tmpdir)
+    mols = get_mols(conn, mols_pareto)
+    res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+    return res
+
+
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, vina_path, python_path, vina_script_dir, make_docking=True, make_selection=True,
                    **kwargs):
     if make_docking:
         tmpdir = os.path.abspath(os.path.join(tmpdir, f'iter{iteration}'))
         os.makedirs(tmpdir)
-        save_smi_to_pdb(conn, iteration, tmpdir)
+        save_smi_to_pdb(conn, iteration, tmpdir, ncpu)
         prep_ligands(conn, tmpdir, python_path, vina_script_dir, ncpu)
         dock_ligands(tmpdir, protein_pdbqt, protein_setup, vina_path, ncpu)
         update_db(conn, tmpdir)
@@ -531,6 +623,8 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
 
     mol_ids = get_docked_mol_ids(conn, iteration)
     mols = get_mols(conn, mol_ids)
+
+    res = []
 
     if make_selection:
 
@@ -548,11 +642,11 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
             elif alg_type == 3:
                 res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
                                            ntop=ntop, ncpu=ncpu, **kwargs)
-        else:
-            res = []
+            elif alg_type == 4:
+                res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
+                                          ncpu=ncpu, tmpdir=tmpdir, iteration=iteration, **kwargs)
 
     else:
-        mols = [Chem.MolFromMolBlock(mol) for mol in mols]
         res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
 
     if res:
@@ -611,7 +705,7 @@ def main():
                         help='path to the vina executable.')
     parser.add_argument('-t', '--algorithm', default=1, type=int,
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering, '
-                             '3 - clustering.')
+                             '3 - clustering, 4 - Pareto front.')
     parser.add_argument('-mw', '--mol_weight', default=500, type=int,
                         help='maximum ligand weight')
     parser.add_argument('-nt', '--ntop', type=int, required=False,
@@ -679,3 +773,8 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
+
