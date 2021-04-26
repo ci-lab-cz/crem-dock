@@ -1,27 +1,29 @@
+import argparse
 import glob
 import os
-import shutil
-import argparse
 import random
-import string
+import shutil
 import sqlite3
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
+import string
 import subprocess
+import traceback
+from itertools import combinations
+from multiprocessing import Pool, cpu_count
+
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from crem.crem import grow_mol
+from joblib import Parallel, delayed
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+from rdkit.Chem.Descriptors import MolWt
+from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from rdkit.ML.Cluster import Butina
-from rdkit.Chem.Descriptors import MolWt
 from scipy.spatial.distance import euclidean
-from joblib import Parallel, delayed
-from multiprocessing import Pool, cpu_count
-from scripts import Docking, Smi2PDB
-from crem.crem import grow_mol
-from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
-from itertools import combinations
 
+from scripts import Docking, Smi2PDB
 
 def cpu_type(x):
     return max(1, min(int(x), cpu_count()))
