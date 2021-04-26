@@ -631,9 +631,12 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
     if make_selection:
 
         mols = filter_mols(mols, mw, rtb)
-
+        if not mols:
+            print(f'iteration{iteration}: no molecule was selected by MW and RTB')
         if iteration != 1:
             mols = filter_mols_by_rms(mols, conn, rmsd)
+            if not mols:
+                print(f'iteration{iteration}: no molecule was selected by rmsd')
         if mols:
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, ntop=ntop, ncpu=ncpu,
@@ -678,6 +681,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         return True
 
     else:
+        print('Growth has stopped')
         return False
 
 
@@ -750,20 +754,20 @@ def main():
         make_selection = make_docking
         iteration = 1
 
-    conn = sqlite3.connect(args.output)
+        conn = sqlite3.connect(args.output)
 
-    while True:
-
-        index_tanimoto = 0.9  # required for alg 2 and 3
-        res = make_iteration(conn=conn, iteration=iteration, protein_pdbqt=args.protein,
-                             protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
-                             mw=args.mol_weight, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
-                             ncpu=args.ncpu, tmpdir=tmpdir, vina_path=args.vina, python_path=python_path,
-                             vina_script_dir=vina_script_dir, make_docking=make_docking, make_selection=make_selection,
-                             db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=1, max_atoms=10,
-                             max_replacements=args.max_replacements)
-        make_docking = True
-        make_selection = True
+        while True:
+            index_tanimoto = 0.9  # required for alg 2 and 3
+            res = make_iteration(conn=conn, iteration=iteration, protein_pdbqt=args.protein,
+                                 protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
+                                 mw=args.mol_weight, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
+                                 ncpu=args.ncpu, tmpdir=tmpdir, vina_path=args.vina, python_path=python_path,
+                                 vina_script_dir=vina_script_dir, make_docking=make_docking,
+                                 make_selection=make_selection,
+                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=1, max_atoms=10,
+                                 max_replacements=args.max_replacements)
+            make_docking = True
+            make_selection = True
 
         if res:
             iteration += 1
