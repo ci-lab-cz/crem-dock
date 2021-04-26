@@ -171,7 +171,7 @@ def update_db(conn, dname):
 
         mol_block = None
         mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('MODEL')[1].split('\n')]),
-                                   removeHs=True)
+                                   removeHs=False)
 
         if mol:
             try:
