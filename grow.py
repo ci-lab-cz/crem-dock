@@ -730,6 +730,8 @@ def main():
     if args.tmpdir is None:
         tmpdir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(args.output)),
                                               ''.join(random.sample(string.ascii_lowercase, 6))))
+    else:
+        tmpdir = args.tmpdir
 
     os.makedirs(tmpdir)
 
