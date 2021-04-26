@@ -22,6 +22,7 @@ def save_to_pdb(smi, fname):
         try:
             res = AllChem.EmbedMolecule(mol, AllChem.ETKDG())
             if res == 0:
+                AllChem.UFFOptimizeMolecule(mol, maxIters=100)
                 pdb = Chem.MolToPDBBlock(mol)
                 with open(fname, 'wt') as f:
                     f.write(pdb)
