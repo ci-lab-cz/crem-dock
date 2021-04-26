@@ -364,7 +364,9 @@ def get_protected_ids(mol, protein_file, dist_threshold):
     :return:
     """
     pdb_block = open(protein_file).readlines()
-    protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]))
+    protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]), sanitize=False)
+    if protein is None:
+        raise ValueError("Protein structure is incorrect. Please check protein pdbqt file.")
     protein_cord = protein.GetConformer().GetPositions()
     ids = set()
     for atom, cord in zip(mol.GetAtoms(), mol.GetConformer().GetPositions()):
