@@ -738,21 +738,24 @@ def main():
         tmpdir = args.tmpdir
 
     os.makedirs(tmpdir)
+    iteration = 1
 
     # depending on input setup operations applied on the first iteration
     # input      make_docking   make_selection
     # SMILES             True             True
     # 3D SDF            False            False
     # existed DB        False             True
-    if os.path.exists(args.output):
-        make_docking = False
-        make_selection = True
-        iteration = get_last_iter_from_db(args.output) + 1
-    else:
-        create_db(args.output)
-        make_docking = insert_starting_structures_to_db(args.input_frags, args.output)
-        make_selection = make_docking
-        iteration = 1
+    try:
+        if os.path.exists(args.output):
+            make_docking = False
+            make_selection = True
+            iteration = get_last_iter_from_db(args.output)
+            if iteration is None:
+                raise FileExistsError("The data was not found in the existing database. Please check the database")
+        else:
+            create_db(args.output)
+            make_docking = insert_starting_structures_to_db(args.input_frags, args.output)
+            make_selection = make_docking
 
         conn = sqlite3.connect(args.output)
 
@@ -769,14 +772,19 @@ def main():
             make_docking = True
             make_selection = True
 
-        if res:
-            iteration += 1
-            if args.algorithm in [2, 3]:
-                index_tanimoto -= 0.05
-        else:
-            break
-
-    shutil.rmtree(tmpdir, ignore_errors=True)
+            if res:
+                iteration += 1
+                if args.algorithm in [2, 3]:
+                    index_tanimoto -= 0.05
+            else:
+                if iteration == 1:
+                    # 0 succesfull iteration for finally printing
+                    iteration = 0
+                break
+    finally:
+        if args.tmpdir is None:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        print(f'{iteration} iterations were completed successfully')
 
 
 if __name__ == '__main__':
