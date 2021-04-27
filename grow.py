@@ -738,8 +738,8 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                             bond.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
                     isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
                 for i, m in enumerate(isomers):
-                    m = Chem.AddHs(m, addCoords=True)
-                    parent_mol = Chem.AddHs(parent_mol, addCoords=True)
+                    m = Chem.AddHs(m)
+                    parent_mol = Chem.AddHs(parent_mol)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
                     product_protected_canon_user_id = None
                     if parent_mol.HasProp('protected_user_canon_ids') and parent_mol.GetProp('protected_user_canon_ids'):
