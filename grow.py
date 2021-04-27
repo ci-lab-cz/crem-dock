@@ -475,6 +475,9 @@ def insert_starting_structures_to_db(fname, db_fname):
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
                 if mol:
                     name = mol.GetProp('_Name')
+                    if not name:
+                        name = '000-' + str(i).zfill(6)
+                        mol.SetProp('_Name', name)
                     mol = Chem.AddHs(mol, addCoords=True)
                     protected_user_canon_ids = None
                     if mol.HasProp('protected_user_ids'):
@@ -483,9 +486,6 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_canon_ids = ','.join([str(canon_idx) for canon_idx in
                                                                     get_canon_for_atom_idx(mol, protected_user_ids)])
 
-                    if not name:
-                        name = '000-' + str(i).zfill(6)
-                        mol.SetProp('_Name', name)
                     data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None, None, None,
                                  Chem.MolToMolBlock(mol), protected_user_canon_ids))
         else:
