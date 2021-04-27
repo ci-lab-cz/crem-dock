@@ -777,6 +777,10 @@ def main():
                         help='the frequency of occurrence of the fragment in the source database. Default: 0.')
     parser.add_argument('--max_replacements', type=int, required=False, default=None,
                         help='the maximum number of randomly chosen replacements. Default: None (all replacements).')
+    parser.add_argument('--min_atoms', default=1, type=int,
+                        help='the minimum number of atoms in the fragment which will replace H')
+    parser.add_argument('--max_atoms', default=10, type=int,
+                        help='the maximum number of atoms in the fragment which will replace H')
     parser.add_argument('-p', '--protein', metavar='protein.pdbqt', required=True,
                         help='input PDBQT file with a prepared protein.')
     parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True,
@@ -844,7 +848,8 @@ def main():
                                  ncpu=args.ncpu, tmpdir=tmpdir, vina_path=args.vina, python_path=python_path,
                                  vina_script_dir=vina_script_dir, make_docking=make_docking,
                                  make_selection=make_selection,
-                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=1, max_atoms=10,
+                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq,
+                                 min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements)
             make_docking = True
             make_selection = True
