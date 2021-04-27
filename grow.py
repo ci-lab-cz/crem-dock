@@ -577,7 +577,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1,
         for mol_id in cluster:
             tmp = __grow_mol(mol_dict[mol_id], protein_pdbqt, ncpu=ncpu, **kwargs)
             if tmp:
-                res[mol_id] = tmp
+                res[mol_dict[mol_id]] = tmp
                 processed_mols += 1
             if processed_mols == ntop:
                 break
