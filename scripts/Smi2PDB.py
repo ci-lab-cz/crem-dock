@@ -22,6 +22,7 @@ def save_to_pdb(smi, fname):
         try:
             res = AllChem.EmbedMolecule(mol, AllChem.ETKDG())
             if res == 0:
+                AllChem.UFFOptimizeMolecule(mol, maxIters=100)
                 pdb = Chem.MolToPDBBlock(mol)
                 with open(fname, 'wt') as f:
                     f.write(pdb)
@@ -29,6 +30,10 @@ def save_to_pdb(smi, fname):
             print('Embedding problem of', smi)
     else:
         print('Conversion problem of', smi)
+
+
+def save_to_pdb_mp(items):
+    return save_to_pdb(*items)
 
 
 def save_to_pdb2(child_mol, parent_mol, fname):
@@ -54,6 +59,10 @@ def save_to_pdb2(child_mol, parent_mol, fname):
     with open(fname, 'wt') as pdb:
         pdb.write(mol)
         print('Done')
+
+
+def save_to_pdb2_mp(items):
+    return save_to_pdb2(*items)
 
 
 def main(input_fname, output_dname, ncpu):
