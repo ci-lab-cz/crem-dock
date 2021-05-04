@@ -219,7 +219,7 @@ def get_rmsd(child_mol, parent_mol):
         rms = np.sqrt((diff ** 2).sum() / len(diff))
         if rms < best_rms:
             best_rms = rms
-    return best_rms
+    return round(best_rms, 3)
 
 
 def get_docked_mol_ids(conn, iteration):
