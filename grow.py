@@ -6,6 +6,7 @@ import shutil
 import sqlite3
 import string
 import subprocess
+import sys
 import traceback
 from itertools import combinations
 from multiprocessing import Pool, cpu_count
@@ -181,6 +182,7 @@ def update_db(conn, dname):
                 mol.SetProp('_Name', mol_id)
                 mol_block = Chem.MolToMolBlock(mol)
             except:
+                sys.stderr.write(f'Could not assign bond orders while parsing PDB: {fname}\n')
                 mol = None
             # get atoms
             parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
@@ -191,6 +193,7 @@ def update_db(conn, dname):
             else:
                 rms = None
         else:
+            sys.stderr.write(f'Could not read PDB: {fname}\n')
             rms = None
 
         cur.execute("""UPDATE mols
