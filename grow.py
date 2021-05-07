@@ -203,7 +203,7 @@ def update_db(conn, dname):
                                rmsd = ? 
                            WHERE
                                id = ?
-                        """, (pdb_block, mol_block, score, rms, mol_id))
+                        """, ('MODEL' + pdb_block.split('MODEL 2')[0], mol_block, score, rms, mol_id))
     conn.commit()
 
 
