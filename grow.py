@@ -1,5 +1,6 @@
 import argparse
 import glob
+import json
 import os
 import random
 import shutil
@@ -810,7 +811,8 @@ def main():
                         help='number of cpus. Default: 1.')
 
     args = parser.parse_args()
-
+    with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
+        json.dump(vars(args), f, sort_keys=True, indent=2)
 
     python_path = os.path.join(args.mgl_install_dir, 'bin/python')
     vina_script_dir = os.path.join(args.mgl_install_dir, 'MGLToolsPckgs/AutoDockTools/Utilities24/')
