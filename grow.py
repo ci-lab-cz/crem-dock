@@ -27,6 +27,7 @@ from scipy.spatial.distance import euclidean
 
 from scripts import Docking, Smi2PDB
 
+
 def cpu_type(x):
     return max(1, min(int(x), cpu_count()))
 
@@ -175,7 +176,7 @@ def update_db(conn, dname):
 
         mol_block = None
         mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('MODEL')[1].split('\n')]),
-                                   removeHs=False)
+                                   removeHs=True)
 
         if mol:
             try:
@@ -400,15 +401,18 @@ def __grow_mol(mol, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = []
     if mol.HasProp('protected_user_canon_ids'):
-        _protected_user_ids = get_atom_idxs_for_canon(mol, [int(i) for i in mol.GetProp('protected_user_canon_ids').split(',')])
+        _protected_user_ids = get_atom_idxs_for_canon(mol, [int(i) for i in
+                                                            mol.GetProp('protected_user_canon_ids').split(',')])
     _protected_alg_ids = get_protected_ids(mol, protein_pdbqt, h_dist_threshold)
     protected_ids = list(set(_protected_user_ids + _protected_alg_ids))
     try:
-        return list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
+        return list(
+            grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
     except Exception:
         error_message = traceback.format_exc()
-        print('Grow error. Raise Exception. ', error_message, mol, mol.GetProp('_Name'), Chem.MolToSmiles(mol))
-        raise Exception
+        sys.stderr.write(
+            f"""Could not grow mol: {mol.GetProp('_Name')}, {Chem.MolToSmiles(mol)}. Error: {error_message}.""")
+        return []
 
 
 def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
@@ -488,9 +492,10 @@ def insert_starting_structures_to_db(fname, db_fname):
                         # rdkit numeration starts with 0 and sdf numeration starts with 1
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                         protected_user_canon_ids = ','.join([str(canon_idx) for canon_idx in
-                                                                    get_canon_for_atom_idx(mol, protected_user_ids)])
+                                                             get_canon_for_atom_idx(mol, protected_user_ids)])
 
-                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None, None, None,
+                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None,
+                                 None, None,
                                  Chem.MolToMolBlock(mol), protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
@@ -746,13 +751,17 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                     parent_mol = Chem.AddHs(parent_mol)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
                     product_protected_canon_user_id = None
-                    if parent_mol.HasProp('protected_user_canon_ids') and parent_mol.GetProp('protected_user_canon_ids'):
+                    if parent_mol.HasProp('protected_user_canon_ids') and parent_mol.GetProp(
+                            'protected_user_canon_ids'):
                         parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol,
-                                                                            [int(idx) for idx in parent_mol.GetProp('protected_user_canon_ids').split(',')])
+                                                                            [int(idx) for idx in parent_mol.GetProp(
+                                                                                'protected_user_canon_ids').split(',')])
                         product_protected_user_id = get_product_atom_protected(m, parent_protected_user_ids)
-                        product_protected_canon_user_id = ','.join([str(canon_idx) for canon_idx in get_canon_for_atom_idx(m, product_protected_user_id)])
+                        product_protected_canon_user_id = ','.join(
+                            [str(canon_idx) for canon_idx in get_canon_for_atom_idx(m, product_protected_user_id)])
 
-                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), parent_mol.GetProp('_Name'), None, None, None, None, None,
+                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True),
+                                 parent_mol.GetProp('_Name'), None, None, None, None, None,
                                  product_protected_canon_user_id))
 
         insert_db(conn, data)
@@ -811,8 +820,6 @@ def main():
                         help='number of cpus. Default: 1.')
 
     args = parser.parse_args()
-    with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
-        json.dump(vars(args), f, sort_keys=True, indent=2)
 
     python_path = os.path.join(args.mgl_install_dir, 'bin/python')
     vina_script_dir = os.path.join(args.mgl_install_dir, 'MGLToolsPckgs/AutoDockTools/Utilities24/')
@@ -835,7 +842,8 @@ def main():
         if os.path.exists(args.output):
             make_docking = False
             make_selection = True
-            iteration = get_last_iter_from_db(args.output)
+            iteration = get_last_iter_from_db(args.output) + 1  # +1 need for choosing right iteration
+            print("iteration", iteration)
             if iteration is None:
                 raise FileExistsError("The data was not found in the existing database. Please check the database")
         else:
@@ -844,6 +852,9 @@ def main():
             make_selection = make_docking
 
         conn = sqlite3.connect(args.output)
+
+        with open(os.path.splitext(args.output)[0] + '.json', 'w') as f:
+            json.dump(vars(args), f, sort_keys=True, indent=2)
 
         while True:
             index_tanimoto = 0.9  # required for alg 2 and 3
