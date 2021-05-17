@@ -417,8 +417,9 @@ def __grow_mol(mol, protein_xyz, h_dist_threshold=2, ncpu=1, **kwargs):
         return list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
     except Exception:
         error_message = traceback.format_exc()
-        print('Grow error. Raise Exception. ', error_message, mol, mol.GetProp('_Name'), Chem.MolToSmiles(mol))
-        raise Exception
+        sys.stderr.write('Grow error. Raise Exception. ', error_message, mol, mol.GetProp('_Name'),
+                         Chem.MolToSmiles(mol))
+        return []
 
 
 def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
