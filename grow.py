@@ -68,7 +68,7 @@ def set_common_atoms(mol_name, child_mol, parent_mol, conn):
     conn.commit()
 
 
-def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
+def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
     '''
     Creates file with SMILES which is supplied to Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
     Parse output and generate PDB files stored in the specified directory. Updates the common atoms field in DB
@@ -79,20 +79,21 @@ def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
     :param ncpu:
     :return:
     '''
-    fname = os.path.join(tmpdir, '1.smi')
     cur = conn.cursor()
-    smiles = list(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'"))
-    mol_ids = [i for smi, i in smiles]
-    with open(fname, 'wt') as f:
-        f.writelines('%s\t%s\n' % item for item in smiles)
-    cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
-    smi_output = subprocess.check_output(cmd_run, shell=True).decode().split()
+    smiles = cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'")
+    smiles, mol_ids = zip(*smiles)
+    if protonation:
+        fname = os.path.join(tmpdir, '1.smi')
+        with open(fname, 'wt') as f:
+            f.writelines('%s\t%s\n' % item for item in zip(smiles, mol_ids))
+        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
+        smiles = subprocess.check_output(cmd_run, shell=True).decode().split()
 
     pool = Pool(ncpu)
 
     if iteration == 1:
         pool.imap_unordered(Smi2PDB.save_to_pdb_mp,
-                            [(i, os.path.join(tmpdir, f'{j}.pdb')) for i, j in zip(smi_output, mol_ids)])
+                            ((smi, os.path.join(tmpdir, f'{mol_id}.pdb')) for smi, mol_id in zip(smiles,mol_ids)))
         pool.close()
         pool.join()
 
@@ -101,9 +102,11 @@ def save_smi_to_pdb(conn, iteration, tmpdir, ncpu):
         parent_ids = list(set(pars.values()))
         sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})'
         parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in cur.execute(sql, parent_ids)}
-        mols = [Chem.MolFromSmiles(i) for i in smi_output]
-        pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, [(mol, parent_mols[pars[i]], os.path.join(tmpdir, f'{i}.pdb'))
-                                                      for i, mol in zip(mol_ids, mols)])
+        mols = [Chem.MolFromSmiles(i) for i in smiles]
+        pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, ((mol,
+                                                       parent_mols[pars[mol_id]],
+                                                       os.path.join(tmpdir, f'{mol_id}.pdb'))
+                                                      for mol_id, mol in zip(mol_ids, mols)))
         pool.close()
         pool.join()
 
@@ -697,12 +700,12 @@ def get_canon_for_atom_idx(mol, idx):
 
 
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, vina_path, python_path, vina_script_dir, make_docking=True, make_selection=True,
-                   **kwargs):
+                   ncpu, tmpdir, vina_path, python_path, vina_script_dir, protonation, make_docking=True,
+                   make_selection=True, **kwargs):
     if make_docking:
         tmpdir = os.path.abspath(os.path.join(tmpdir, f'iter{iteration}'))
         os.makedirs(tmpdir)
-        save_smi_to_pdb(conn, iteration, tmpdir, ncpu)
+        save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu)
         prep_ligands(conn, tmpdir, python_path, vina_script_dir, ncpu)
         dock_ligands(tmpdir, protein_pdbqt, protein_setup, vina_path, ncpu)
         update_db(conn, tmpdir)
@@ -803,6 +806,9 @@ def main():
                         help='input PDBQT file with a prepared protein.')
     parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True,
                         help='input text file with Vina docking setup.')
+    parser.add_argument('--no_protonation', action='store_true', default=False,
+                        help='disable protonation of molecules before docking. Protonation requires installed '
+                             'cxcalc chemaxon utility.')
     parser.add_argument('--mgl_install_dir', metavar='DIRNAME', required=True,
                         help='path to the dir with installed MGLtools.')
     parser.add_argument('--vina', metavar='vina_path', required=True,
@@ -870,7 +876,7 @@ def main():
                                  make_selection=make_selection,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements)
+                                 max_replacements=args.max_replacements, protonation=not args.no_protonation)
             make_docking = True
             make_selection = True
 
