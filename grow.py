@@ -448,6 +448,7 @@ def insert_db(conn, data):
 
 
 def create_db(fname):
+    os.makedirs(os.path.dirname(fname), exist_ok=True)
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS mols")
@@ -824,8 +825,6 @@ def main():
                         help='number of cpus. Default: 1.')
 
     args = parser.parse_args()
-    with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
-        json.dump(vars(args), f, sort_keys=True, indent=2)
 
     python_path = os.path.join(args.mgl_install_dir, 'bin/python')
     vina_script_dir = os.path.join(args.mgl_install_dir, 'MGLToolsPckgs/AutoDockTools/Utilities24/')
@@ -855,6 +854,9 @@ def main():
             create_db(args.output)
             make_docking = insert_starting_structures_to_db(args.input_frags, args.output)
             make_selection = make_docking
+
+        with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
+            json.dump(vars(args), f, sort_keys=True, indent=2)
 
         conn = sqlite3.connect(args.output)
 
