@@ -23,9 +23,10 @@ from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from rdkit.ML.Cluster import Butina
-from scipy.spatial.distance import euclidean
+from scipy.spatial import distance_matrix
 
 from scripts import Docking, Smi2PDB
+
 
 def cpu_type(x):
     return max(1, min(int(x), cpu_count()))
@@ -370,7 +371,7 @@ def gen_cluster_subset_algButina(mols, tanimoto):
     return output
 
 
-def get_protected_ids(mol, protein_file, dist_threshold):
+def get_protected_ids(mol, protein_xyz, dist_threshold):
     """
     Returns list of atoms ids which have hydrogen atoms close to the protein
     :param mol: molecule
@@ -378,30 +379,39 @@ def get_protected_ids(mol, protein_file, dist_threshold):
     :param dist_threshold: minimum distance to hydrogen atoms
     :return:
     """
-    pdb_block = open(protein_file).readlines()
+    hids = np.array([a.GetIdx() for a in mol.GetAtoms() if a.GetAtomicNum() == 1])
+    xyz = mol.GetConformer().GetPositions()[hids]
+    min_xyz = xyz.min(axis=0) - dist_threshold
+    max_xyz = xyz.max(axis=0) + dist_threshold
+    # select protein atoms which are within a box of min-max coordinates of ligand hydrogen atoms
+    pids = (protein_xyz >= min_xyz).any(axis=1) & (protein_xyz <= max_xyz).any(axis=1)
+    pxyz = protein_xyz[pids]
+    m = distance_matrix(xyz, pxyz)  # get matrix (ligandH x protein)
+    ids = sorted(hids[(m <= dist_threshold).any(axis=1)].tolist())
+    return ids
+
+
+def get_protein_heavy_atom_xyz(protein_pdbqt):
+    """
+    Returns coordinates of heavy atoms
+    :param protein_pdbqt:
+    :return: 2darray (natoms x 3)
+    """
+    pdb_block = open(protein_pdbqt).readlines()
     protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]), sanitize=False)
     if protein is None:
         raise ValueError("Protein structure is incorrect. Please check protein pdbqt file.")
-    protein_cord = protein.GetConformer().GetPositions()
-    ids = set()
-    for atom, cord in zip(mol.GetAtoms(), mol.GetConformer().GetPositions()):
-        b = False
-        if atom.GetAtomicNum() == 1:
-            for i in protein_cord:
-                if euclidean(cord, i) <= dist_threshold:
-                    b = True
-                    break
-            if b:
-                ids.add(atom.GetIdx())
-    return sorted(ids)
+    protein = Chem.RemoveHs(protein)
+    xyz = protein.GetConformer().GetPositions()
+    return xyz
 
 
-def __grow_mol(mol, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mol(mol, protein_xyz, h_dist_threshold=2, ncpu=1, **kwargs):
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = []
     if mol.HasProp('protected_user_canon_ids'):
         _protected_user_ids = get_atom_idxs_for_canon(mol, [int(i) for i in mol.GetProp('protected_user_canon_ids').split(',')])
-    _protected_alg_ids = get_protected_ids(mol, protein_pdbqt, h_dist_threshold)
+    _protected_alg_ids = get_protected_ids(mol, protein_xyz, h_dist_threshold)
     protected_ids = list(set(_protected_user_ids + _protected_alg_ids))
     try:
         return list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
@@ -422,8 +432,9 @@ def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
     :return: dict of parent mols and lists of corresponding generated mols
     """
     res = dict()
+    protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
     for mol in mols:
-        tmp = __grow_mol(mol, protein_pdbqt, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
+        tmp = __grow_mol(mol, protein_xyz, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol] = tmp
     return res
@@ -575,11 +586,12 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, ntop, ncpu=1,
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))  # {mol_id: mol, ...}
+    protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
     # grow up to N top scored mols from each cluster
     for cluster in sorted_clusters:
         processed_mols = 0
         for mol_id in cluster:
-            tmp = __grow_mol(mol_dict[mol_id], protein_pdbqt, ncpu=ncpu, **kwargs)
+            tmp = __grow_mol(mol_dict[mol_id], protein_xyz, ncpu=ncpu, **kwargs)
             if tmp:
                 res[mol_dict[mol_id]] = tmp
                 processed_mols += 1
