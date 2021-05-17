@@ -524,7 +524,7 @@ def get_last_iter_from_db(db_fname):
         res = list(cur.execute("SELECT iteration, MIN(docking_score) FROM mols GROUP BY iteration ORDER BY iteration"))
         for iteration, score in reversed(res):
             if score is not None:
-                return iteration
+                return iteration + 1
 
 
 def selection_grow_greedy(mols, conn, protein_pdbqt, ntop, ncpu=1, **kwargs):
