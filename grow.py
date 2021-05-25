@@ -401,8 +401,8 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
     protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]), sanitize=False)
     if protein is None:
         raise ValueError("Protein structure is incorrect. Please check protein pdbqt file.")
-    protein = Chem.RemoveHs(protein)
     xyz = protein.GetConformer().GetPositions()
+    xyz = xyz[[a.GetAtomicNum() > 1 for a in protein.GetAtoms()], ]
     return xyz
 
 
