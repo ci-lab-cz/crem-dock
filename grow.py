@@ -250,7 +250,7 @@ def get_mols(conn, mol_ids):
     sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
     mols = []
     for items in cur.execute(sql, mol_ids):
-        m = Chem.MolFromMolBlock(items[0])
+        m = Chem.MolFromMolBlock(items[0], removeHs=False)
         if not m:
             continue
         if items[1] is not None:
