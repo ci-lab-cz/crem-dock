@@ -842,7 +842,7 @@ def main():
     else:
         tmpdir = args.tmpdir
 
-    os.makedirs(tmpdir)
+    os.makedirs(tmpdir, exist_ok=True)
     iteration = 1
 
     # depending on input setup operations applied on the first iteration
