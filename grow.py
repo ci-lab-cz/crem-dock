@@ -701,7 +701,7 @@ def get_canon_for_atom_idx(mol, idx):
 
 
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, vina_path, python_path, vina_script_dir, make_docking=True, make_selection=True,
+                   ncpu, tmpdir, vina_path, python_path, vina_script_dir, debug, make_docking=True, make_selection=True,
                    **kwargs):
     if make_docking:
         tmpdir = os.path.abspath(os.path.join(tmpdir, f'iter{iteration}'))
@@ -710,7 +710,8 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         prep_ligands(conn, tmpdir, python_path, vina_script_dir, ncpu)
         dock_ligands(tmpdir, protein_pdbqt, protein_setup, vina_path, ncpu)
         update_db(conn, tmpdir)
-        shutil.rmtree(tmpdir, ignore_errors=True)
+        if not debug:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
     mol_ids = get_docked_mol_ids(conn, iteration)
     mols = get_mols(conn, mol_ids)
@@ -825,6 +826,8 @@ def main():
     parser.add_argument('--tmpdir', metavar='DIRNAME', default=None,
                         help='directory where temporary files will be stored. If omitted atmp dir will be created in '
                              'the same location as output DB.')
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='enable debug mode; all tmp files will not be erased.')
     parser.add_argument('-n', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus. Default: 1.')
 
