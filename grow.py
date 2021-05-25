@@ -877,7 +877,7 @@ def main():
                                  make_selection=make_selection,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements)
+                                 max_replacements=args.max_replacements, debug=args.debug)
             make_docking = True
             make_selection = True
 
