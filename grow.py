@@ -450,7 +450,9 @@ def insert_db(conn, data):
 
 
 def create_db(fname):
-    os.makedirs(os.path.dirname(fname), exist_ok=True)
+    p = os.path.dirname(fname)
+    if p:  # if p is "" (current dir) the error will occur
+        os.makedirs(os.path.dirname(fname), exist_ok=True)
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     cur.execute("DROP TABLE IF EXISTS mols")
