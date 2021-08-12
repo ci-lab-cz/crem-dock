@@ -19,6 +19,7 @@ from crem.crem import grow_mol
 from joblib import Parallel, delayed
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
+from rdkit.Chem import rdFMCS
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
@@ -414,6 +415,39 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
     xyz = protein.GetConformer().GetPositions()
     xyz = xyz[[a.GetAtomicNum() > 1 for a in protein.GetAtoms()], ]
     return xyz
+
+
+def protected_heavy_ids(protected_hids, mol, mol_withH):
+    """
+    Returns list of protected heavy atoms of molecule for growing
+    :param protected_hids: list of atoms ids of molecule which have hydrogen atoms close to the protein
+    :param mol: molecule after docking
+    :param mol_withH: molecule for growing
+    :return:
+    """
+    def atoms_ids(mol):
+        return {a.GetIdx() for a in mol.GetAtoms()}
+
+    def heavy_neighbor(mol, hid):
+        return mol.GetAtomWithIdx(hid).GetNeighbors()[0].GetIdx()
+
+    set_hids = set(protected_hids)
+    out = set()
+
+    for heavy_atom_id in (x for x in atoms_ids(mol) if mol.GetAtomWithIdx(x).GetAtomicNum() != 1):
+        h_ids = {a.GetIdx() for a in mol.GetAtomWithIdx(heavy_atom_id).GetNeighbors() if a.GetAtomicNum() == 1}
+        if not h_ids - set_hids:
+            out.add(heavy_atom_id)
+
+    mcs = rdFMCS.FindMCS((mol, mol_withH)).queryMol
+    mol_mcs, mol_withH_mcs = mol.GetSubstructMatch(mcs), mol_withH.GetSubstructMatch(mcs)
+    mapping = dict(zip(mol_mcs, mol_withH_mcs))
+
+    protected_heavy_atomm_ids = {mapping[x] for x in out}
+    false_removed = {mapping[heavy_neighbor(mol, x)] for x in atoms_ids(mol) - set(mol_mcs)}
+    false_added = {heavy_neighbor(mol_withH, x) for x in atoms_ids(mol_withH) - set(mol_withH_mcs)}
+
+    return list((protected_heavy_atomm_ids | false_removed) - false_added)
 
 
 def __grow_mol(mol, protein_xyz, h_dist_threshold=2, ncpu=1, **kwargs):
