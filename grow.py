@@ -495,7 +495,7 @@ def insert_starting_structures_to_db(fname, db_fname):
                     tmp = line.strip().split()
                     smi = tmp[0]
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    data.append((name, 0, smi, None, None, None, None, None, None, None))
+                    data.append((name, 0, smi, None, None, None, None, None, None, None, None, None))
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -512,8 +512,8 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_canon_ids = ','.join([str(canon_idx) for canon_idx in
                                                                     get_canon_for_atom_idx(mol, protected_user_ids)])
 
-                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None, None, None,
-                                 Chem.MolToMolBlock(mol), protected_user_canon_ids))
+                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None, None, None, None, Chem.MolToMolBlock(mol),
+                                 None, protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
