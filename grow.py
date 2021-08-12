@@ -464,12 +464,14 @@ def create_db(fname):
              id TEXT PRIMARY KEY,
              iteration INTEGER,
              smi TEXT,
+             smi_protonated TEXT,
              parent_id TEXT,
              docking_score REAL,
              atoms TEXT,
              rmsd REAL,
              pdb_block TEXT,
              mol_block TEXT,
+             mol_block_protonated TEXT,
              protected_user_canon_ids TEXT DEFAULT NULL
             )""")
     conn.commit()
