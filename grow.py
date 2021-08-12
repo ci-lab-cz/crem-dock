@@ -88,6 +88,13 @@ def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
             f.writelines('%s\t%s\n' % item for item in zip(smiles, mol_ids))
         cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
         smiles = subprocess.check_output(cmd_run, shell=True).decode().split()
+        for mol_id, smi_protonated in zip(mol_ids, smiles):
+            cur.execute("""UPDATE mols
+                       SET smi_protonated = ? 
+                       WHERE
+                           id = ?
+                    """, (smi_protonated, mol_id))
+        conn.commit()
 
     pool = Pool(ncpu)
 
