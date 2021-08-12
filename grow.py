@@ -448,7 +448,7 @@ def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
 
 def insert_db(conn, data):
     cur = conn.cursor()
-    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
+    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
     conn.commit()
 
 
