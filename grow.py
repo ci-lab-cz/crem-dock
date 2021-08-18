@@ -474,7 +474,7 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
                                                             mol.GetProp('protected_user_canon_ids').split(',')])
 
     _protected_alg_ids = set(get_protected_ids(mol, protein_xyz, h_dist_threshold))
-    if protonation and _protected_alg_ids:
+    if protonation:
         _protected_heavy_ids = set()
         for heavy_atom_id in (x for x in atoms_ids(mol) if mol.GetAtomWithIdx(x).GetAtomicNum() != 1):
             h_ids = {a.GetIdx() for a in mol.GetAtomWithIdx(heavy_atom_id).GetNeighbors() if a.GetAtomicNum() == 1}
@@ -488,7 +488,8 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
         mol_withH = Chem.AddHs(
             Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]), addCoords=True)
 
-        protected_ids = protected_heavy_ids(_protected_ids, mol, mol_withH)
+        if _protected_ids:
+            protected_ids = protected_heavy_ids(_protected_ids, mol, mol_withH)
         mol = mol_withH
     else:
         protected_ids = set(_protected_user_ids + list(_protected_alg_ids))
@@ -615,7 +616,7 @@ def get_last_iter_from_db(db_fname):
                 return iteration + 1
 
 
-def selection_grow_greedy(mols, conn, protein_pdbqt, ntop, ncpu=1, **kwargs):
+def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -627,7 +628,7 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, ntop, ncpu=1, **kwargs):
     :return: dict of parent mol and lists of corresponding generated mols
     """
     selected_mols = select_top_mols(mols, conn, ntop)
-    res = __grow_mols(selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
     return res
 
 
