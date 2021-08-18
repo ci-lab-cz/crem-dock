@@ -793,7 +793,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu)
         prep_ligands(conn, tmpdir, python_path, vina_script_dir, ncpu)
         dock_ligands(tmpdir, protein_pdbqt, protein_setup, vina_path, ncpu)
-        update_db(conn, tmpdir)
+        update_db(conn, tmpdir, protonation)
         if not debug:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
