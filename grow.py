@@ -432,48 +432,71 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
     return xyz
 
 
-def protected_heavy_ids(protected_hids, mol, mol_withH):
+def atoms_ids(mol):
+    ids = {a.GetIdx() for a in mol.GetAtoms()}
+    return ids
+
+
+def protected_heavy_ids(out, mol, mol_withH):
     """
     Returns list of protected heavy atoms of molecule for growing
-    :param protected_hids: list of atoms ids of molecule which have hydrogen atoms close to the protein
-    :param mol: molecule after docking
-    :param mol_withH: molecule for growing
+    :param out:
+    :param mol:
+    :param mol_withH:
     :return:
     """
-    def atoms_ids(mol):
-        return {a.GetIdx() for a in mol.GetAtoms()}
 
     def heavy_neighbor(mol, hid):
         return mol.GetAtomWithIdx(hid).GetNeighbors()[0].GetIdx()
 
-    set_hids = set(protected_hids)
-    out = set()
-
-    for heavy_atom_id in (x for x in atoms_ids(mol) if mol.GetAtomWithIdx(x).GetAtomicNum() != 1):
-        h_ids = {a.GetIdx() for a in mol.GetAtomWithIdx(heavy_atom_id).GetNeighbors() if a.GetAtomicNum() == 1}
-        if not h_ids - set_hids:
-            out.add(heavy_atom_id)
-
     mcs = rdFMCS.FindMCS((mol, mol_withH)).queryMol
     mol_mcs, mol_withH_mcs = mol.GetSubstructMatch(mcs), mol_withH.GetSubstructMatch(mcs)
     mapping = dict(zip(mol_mcs, mol_withH_mcs))
+    print(mapping)
 
-    protected_heavy_atomm_ids = {mapping[x] for x in out}
-    false_removed = {mapping[heavy_neighbor(mol, x)] for x in atoms_ids(mol) - set(mol_mcs)}
+    protected_heavy_atom_ids = {mapping[x] for x in out if x in mapping.keys()}
+    false_removed = set()
+    for x in atoms_ids(mol) - set(mol_mcs):
+        heavy = heavy_neighbor(mol, x)
+        if not [atom for atom in mol.GetAtomWithIdx(heavy).GetNeighbors() if atom.GetAtomicNum() == 1]:
+            false_removed.add(mapping[heavy])
     false_added = {heavy_neighbor(mol_withH, x) for x in atoms_ids(mol_withH) - set(mol_withH_mcs)}
 
-    return list((protected_heavy_atomm_ids | false_removed) - false_added)
+    return list((protected_heavy_atom_ids | false_removed) - false_added)
 
 
-def __grow_mol(mol, protein_xyz, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
     mol = Chem.AddHs(mol, addCoords=True)
-    _protected_user_ids = []
+    _protected_alg_ids, _protected_user_ids = [], []
+
     if mol.HasProp('protected_user_canon_ids'):
-        _protected_user_ids = get_atom_idxs_for_canon(mol, [int(i) for i in mol.GetProp('protected_user_canon_ids').split(',')])
-    _protected_alg_ids = get_protected_ids(mol, protein_xyz, h_dist_threshold)
-    protected_ids = list(set(_protected_user_ids + _protected_alg_ids))
+        _protected_user_ids = get_atom_idxs_for_canon(mol, [int(i) for i in
+                                                            mol.GetProp('protected_user_canon_ids').split(',')])
+
+    _protected_alg_ids = set(get_protected_ids(mol, protein_xyz, h_dist_threshold))
+    if protonation and _protected_alg_ids:
+        _protected_heavy_ids = set()
+        for heavy_atom_id in (x for x in atoms_ids(mol) if mol.GetAtomWithIdx(x).GetAtomicNum() != 1):
+            h_ids = {a.GetIdx() for a in mol.GetAtomWithIdx(heavy_atom_id).GetNeighbors() if a.GetAtomicNum() == 1}
+            if not h_ids - _protected_alg_ids:
+                _protected_heavy_ids.add(heavy_atom_id)
+
+        _protected_ids = set(_protected_user_ids + list(_protected_heavy_ids))
+
+        mol_id = mol.GetProp('_Name')
+        print("MOL_ID", mol_id)
+        cur = conn.cursor()
+        mol_withH = Chem.AddHs(
+            Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]), addCoords=True)
+
+        protected_ids = protected_heavy_ids(_protected_ids, mol, mol_withH)
+        mol = mol_withH
+    else:
+        protected_ids = set(_protected_user_ids + list(_protected_alg_ids))
+
     try:
-        return list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
+        return list(
+            grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
     except Exception:
         error_message = traceback.format_exc()
         sys.stderr.write(f'Grow error.\n'
