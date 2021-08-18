@@ -72,8 +72,7 @@ def set_common_atoms(mol_name, child_mol, parent_mol, conn):
 def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
     '''
     Creates file with SMILES which is supplied to Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
-    Parse output and generate PDB files stored in the specified directory. Updates the common atoms field in DB
-    (if iteration > 1)
+    Parse output and generate PDB files stored in the specified directory.
     :param conn:
     :param iteration:
     :param tmpdir:
@@ -99,27 +98,11 @@ def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
 
     pool = Pool(ncpu)
 
-    if iteration == 1:
-        pool.imap_unordered(Smi2PDB.save_to_pdb_mp,
-                            ((smi, os.path.join(tmpdir, f'{mol_id}.pdb')) for smi, mol_id in zip(smiles,mol_ids)))
-        pool.close()
-        pool.join()
+    pool.imap_unordered(Smi2PDB.save_to_pdb_mp,
+                        ((smi, os.path.join(tmpdir, f'{mol_id}.pdb')) for smi, mol_id in zip(smiles,mol_ids)))
+    pool.close()
+    pool.join()
 
-    else:
-        pars = dict(cur.execute(f"SELECT id, parent_id FROM mols WHERE iteration = '{iteration - 1}'"))
-        parent_ids = list(set(pars.values()))
-        sql = f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})'
-        parent_mols = {i: Chem.MolFromMolBlock(j) for i, j in cur.execute(sql, parent_ids)}
-        mols = [Chem.MolFromSmiles(i) for i in smiles]
-        pool.imap_unordered(Smi2PDB.save_to_pdb2_mp, ((mol,
-                                                       parent_mols[pars[mol_id]],
-                                                       os.path.join(tmpdir, f'{mol_id}.pdb'))
-                                                      for mol_id, mol in zip(mol_ids, mols)))
-        pool.close()
-        pool.join()
-
-        for name, child_mol in zip(mol_ids, mols):
-            set_common_atoms(name, child_mol, parent_mols[pars[name]], conn)
 
 
 def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
