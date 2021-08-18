@@ -855,7 +855,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                         product_protected_user_id = get_product_atom_protected(m, parent_protected_user_ids)
                         product_protected_canon_user_id = ','.join([str(canon_idx) for canon_idx in get_canon_for_atom_idx(m, product_protected_user_id)])
 
-                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), parent_mol.GetProp('_Name'), None, None, None, None, None,
+                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None, parent_mol.GetProp('_Name'), None, None, None, None, None, None,
                                  product_protected_canon_user_id))
 
         insert_db(conn, data)
