@@ -174,7 +174,10 @@ def get_mol_block(cur, fname, mol_id, pdb_block, protonation):
             mol = None
         parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
         if parent_id and mol:
-            parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
+            if protonation:
+                parent_mol_block = list(cur.execute(f"SELECT mol_block_protonated FROM mols WHERE id = '{parent_id}'"))[0][0]
+            else:
+                parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
             parent_mol = Chem.MolFromMolBlock(parent_mol_block)
             rms = get_rmsd(mol, parent_mol)
         else:
