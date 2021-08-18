@@ -192,6 +192,7 @@ def update_db(conn, dname, protonation):
     temporary dir in docking DB
     :param conn: connection to docking DB
     :param dname: path to temp directory with files after docking. Those files should have names <mol_id>_dock.pdbqt
+    :param protonation:
     :return:
     """
 
@@ -244,27 +245,35 @@ def get_rmsd(child_mol, parent_mol):
     return round(best_rms, 3)
 
 
-def get_docked_mol_ids(conn, iteration):
+def get_docked_mol_ids(conn, iteration, protonation):
     """
     Returns mol_ids for molecules which where docked at the given iteration and conversion to mol block was successful
     :param conn:
     :param iteration:
+    :param protonation:
     :return:
     """
     cur = conn.cursor()
-    res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL")
+    if protonation:
+        res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration - 1}' AND mol_block_protonated IS NOT NULL")
+    else:
+        res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL")
     return [i[0] for i in res]
 
 
-def get_mols(conn, mol_ids):
+def get_mols(conn, mol_ids, protonation):
     """
     Returns list of Mol objects from docking DB, order is arbitrary
     :param conn: connection to docking DB
     :param mol_ids: list of molecules to retrieve
+    :param protonation:
     :return:
     """
     cur = conn.cursor()
-    sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+    if protonation:
+        sql = f'SELECT mol_block_protonated, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+    else:
+        sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
     mols = []
     for items in cur.execute(sql, mol_ids):
         m = Chem.MolFromMolBlock(items[0], removeHs=False)
@@ -765,8 +774,8 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         if not debug:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-    mol_ids = get_docked_mol_ids(conn, iteration)
-    mols = get_mols(conn, mol_ids)
+    mol_ids = get_docked_mol_ids(conn, iteration, protonation)
+    mols = get_mols(conn, mol_ids, protonation)
 
     res = []
 
