@@ -505,7 +505,7 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
         return []
 
 
-def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mols(conn, mols, protein_pdbqt, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
@@ -518,7 +518,7 @@ def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
     res = dict()
     protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
     for mol in mols:
-        tmp = __grow_mol(mol, protein_xyz, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
+        tmp = __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol] = tmp
     return res
