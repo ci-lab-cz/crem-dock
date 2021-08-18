@@ -157,7 +157,7 @@ def get_mol_block(cur, fname, mol_id, pdb_block, protonation):
     :return:
     """
     if protonation:
-        smi = list(cur.execute(f"SELECT protonated_smi FROM mols WHERE id = '{mol_id}'"))[0][0]
+        smi = list(cur.execute(f"SELECT smi_protonated FROM mols WHERE id = '{mol_id}'"))[0][0]
     else:
         smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
 
