@@ -484,7 +484,6 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
         _protected_ids = set(_protected_user_ids + list(_protected_heavy_ids))
 
         mol_id = mol.GetProp('_Name')
-        print("MOL_ID", mol_id)
         cur = conn.cursor()
         mol_withH = Chem.AddHs(
             Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]), addCoords=True)
