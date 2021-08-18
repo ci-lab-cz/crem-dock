@@ -146,7 +146,47 @@ def get_score(pdb_block):
     return score_correct
 
 
-def update_db(conn, dname):
+def get_mol_block(cur, fname, mol_id, pdb_block, protonation):
+    """
+
+    :param cur:
+    :param fname:
+    :param mol_id:
+    :param pdb_block:
+    :param protonation:
+    :return:
+    """
+    if protonation:
+        smi = list(cur.execute(f"SELECT protonated_smi FROM mols WHERE id = '{mol_id}'"))[0][0]
+    else:
+        smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
+
+    mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('MODEL')[1].split('\n')]),
+                                   removeHs=False)
+    mol_block = None
+    if mol:
+        try:
+            mol = AllChem.AssignBondOrdersFromTemplate(Chem.AddHs(Chem.MolFromSmiles(smi), explicitOnly=True), mol)
+            mol.SetProp('_Name', mol_id)
+            mol_block = Chem.MolToMolBlock(mol)
+        except:
+            sys.stderr.write(f'Could not assign bond orders while parsing PDB: {fname}\n')
+            mol = None
+        parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
+        if parent_id and mol:
+            parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
+            parent_mol = Chem.MolFromMolBlock(parent_mol_block)
+            rms = get_rmsd(mol, parent_mol)
+        else:
+            rms = None
+    else:
+        sys.stderr.write(f'Could not read PDB: {fname}\n')
+        rms = None
+
+    return mol_block, mol, rms
+
+
+def update_db(conn, dname, protonation):
     """
     Insert score, rmsd, fixed bonds string, pdb and mol blocks of molecules having a corresponding pdbqt file in the
     temporary dir in docking DB
@@ -166,40 +206,23 @@ def update_db(conn, dname):
 
         # get mol block for the first pose
         mol_id = os.path.basename(fname).replace('_dock.pdbqt', '')
-        smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
 
-        mol_block = None
-        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdb_block.split('MODEL')[1].split('\n')]),
-                                   removeHs=False)
-
-        if mol:
-            try:
-                mol = AllChem.AssignBondOrdersFromTemplate(Chem.MolFromSmiles(smi), mol)
-                mol.SetProp('_Name', mol_id)
-                mol_block = Chem.MolToMolBlock(mol)
-            except:
-                sys.stderr.write(f'Could not assign bond orders while parsing PDB: {fname}\n')
-                mol = None
-            # get atoms
-            parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
-            if parent_id and mol:
-                parent_mol_block = list(cur.execute(f"SELECT mol_block FROM mols WHERE id = '{parent_id}'"))[0][0]
-                parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-                rms = get_rmsd(mol, parent_mol)
-            else:
-                rms = None
+        if protonation:
+            mol_block_protonated, mol_protonated, rms = get_mol_block(cur, fname, mol_id, pdb_block, protonation)
+            mol_block = None
         else:
-            sys.stderr.write(f'Could not read PDB: {fname}\n')
-            rms = None
+            mol_block, mol, rms = get_mol_block(cur, fname, mol_id, pdb_block, protonation)
+            mol_block_protonated = None
 
         cur.execute("""UPDATE mols
                            SET pdb_block = ?,
                                mol_block = ?,
+                               mol_block_protonated = ?,
                                docking_score = ?,
                                rmsd = ? 
                            WHERE
                                id = ?
-                        """, (pdb_block.split('MODEL 2')[0], mol_block, score, rms, mol_id))
+                        """, (pdb_block.split('MODEL 2')[0], mol_block, mol_block_protonated, score, rms, mol_id))
     conn.commit()
 
 
