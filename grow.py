@@ -86,7 +86,7 @@ def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
         fname = os.path.join(tmpdir, '1.smi')
         with open(fname, 'wt') as f:
             f.writelines('%s\t%s\n' % item for item in zip(smiles, mol_ids))
-        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
+        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M '{fname}'"
         smiles = subprocess.check_output(cmd_run, shell=True).decode().split()
         for mol_id, smi_protonated in zip(mol_ids, smiles):
             cur.execute("""UPDATE mols
