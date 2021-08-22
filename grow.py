@@ -86,7 +86,7 @@ def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
         fname = os.path.join(tmpdir, '1.smi')
         with open(fname, 'wt') as f:
             f.writelines('%s\t%s\n' % item for item in zip(smiles, mol_ids))
-        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M '{fname}'"
+        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles '{fname}'"
         smiles = subprocess.check_output(cmd_run, shell=True).decode().split()
         for mol_id, smi_protonated in zip(mol_ids, smiles):
             cur.execute("""UPDATE mols
@@ -447,7 +447,7 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     if protonation and protected_ids:
         mol_id = mol.GetProp('_Name')
         cur = conn.cursor()
-        mol2 = Chem.AddHs(Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]))  # non-protonated mol
+        mol2 = Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0])  # non-protonated mol
         mol2.SetProp('_Name', mol_id)
         protected_ids = find_protected_ids(protected_ids, mol, mol2)
         mol = mol2
