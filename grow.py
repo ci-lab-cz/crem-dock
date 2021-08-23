@@ -93,7 +93,7 @@ def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
                        SET smi_protonated = ? 
                        WHERE
                            id = ?
-                    """, (smi_protonated, mol_id))
+                    """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
         conn.commit()
 
     pool = Pool(ncpu)
