@@ -104,7 +104,11 @@ def update_db(conn, dock_result, mol_ids, protonation):
         parent_mol_block = parents_dict[parent_id]
         if mol:
             try:
-                mol = AllChem.AssignBondOrdersFromTemplate(Chem.AddHs(Chem.MolFromSmiles(smi), explicitOnly=True), mol)
+                template_mol = Chem.MolFromSmiles(smi)
+                # explicit hydrogends are removed from carbon atoms (chiral hydrogens) to match pdbqt mol, e.g. [NH3+][C@H](C)C(=O)[O-]
+                template_mol = Chem.AddHs(template_mol, explicitOnly=True,
+                                          onlyOnAtoms=[a.GetIdx() for a in template_mol.GetAtoms() if a.GetAtomicNum() != 6])
+                mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
                 mol.SetProp('_Name', mol_id)
                 mol_block = Chem.MolToMolBlock(mol)
             except:
