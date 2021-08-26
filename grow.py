@@ -1,22 +1,19 @@
 import argparse
-import glob
 import json
 import os
 import random
 import shutil
 import sqlite3
 import string
-import subprocess
 import sys
 import traceback
 from itertools import combinations, chain
-from multiprocessing import Pool, cpu_count
+from multiprocessing import cpu_count
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from crem.crem import grow_mol
-from joblib import Parallel, delayed
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdFMCS
@@ -67,70 +64,6 @@ def set_common_atoms(mol_name, child_mol, parent_mol, conn):
                            id = ?
                     """, (atoms, mol_name))
     conn.commit()
-
-
-def save_smi_to_pdb(conn, iteration, tmpdir, protonation, ncpu):
-    '''
-    Creates file with SMILES which is supplied to Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
-    Parse output and generate PDB files stored in the specified directory.
-    :param conn:
-    :param iteration:
-    :param tmpdir:
-    :param ncpu:
-    :return:
-    '''
-    cur = conn.cursor()
-    smiles = cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'")
-    smiles, mol_ids = zip(*smiles)
-    if protonation:
-        fname = os.path.join(tmpdir, '1.smi')
-        with open(fname, 'wt') as f:
-            f.writelines('%s\t%s\n' % item for item in zip(smiles, mol_ids))
-        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles '{fname}'"
-        smiles = subprocess.check_output(cmd_run, shell=True).decode().split()
-        for mol_id, smi_protonated in zip(mol_ids, smiles):
-            cur.execute("""UPDATE mols
-                       SET smi_protonated = ? 
-                       WHERE
-                           id = ?
-                    """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
-        conn.commit()
-        os.remove(fname)
-
-    pool = Pool(ncpu)
-
-    pool.imap_unordered(Smi2PDB.save_to_pdb_mp,
-                        ((smi, os.path.join(tmpdir, f'{mol_id}.pdb')) for smi, mol_id in zip(smiles,mol_ids)))
-    pool.close()
-    pool.join()
-
-
-def prep_ligands(conn, dname, python_path, vina_script_dir, ncpu):
-    def supply_lig_prep(conn, dname, python_path, vina_script_dir):
-        cur = conn.cursor()
-        for fname in glob.glob(os.path.join(dname, '*.pdb')):
-            mol_id = os.path.basename(os.path.splitext(fname)[0])
-            atoms = list(cur.execute(f"SELECT atoms FROM mols WHERE id = '{mol_id}'"))[0][0]
-            if not atoms:
-                atoms = ''
-            yield fname, os.path.abspath(
-                os.path.splitext(fname)[0] + '.pdbqt'), python_path, vina_script_dir + 'prepare_ligand4.py', atoms
-
-    pool = Pool(ncpu)
-    pool.imap_unordered(Docking.prepare_ligands_mp, list(supply_lig_prep(conn, dname, python_path, vina_script_dir)))
-    pool.close()
-    pool.join()
-
-
-def dock_ligands(dname, target_fname_pdbqt, target_setup_fname, vina_path, ncpu):
-    def supply_lig_dock_data(dname, target_fname_pdbqt, target_setup_fname):
-        for fname in glob.glob(os.path.join(dname, '*.pdbqt')):
-            yield fname, fname.rsplit('.', 1)[0] + '_dock.pdbqt', target_fname_pdbqt, target_setup_fname, vina_path
-
-    Parallel(n_jobs=ncpu, verbose=8)(delayed(Docking.run_docking)(i_fname, o_fname, target, setup, vina_script)
-                                     for i_fname, o_fname, target, setup, vina_script in supply_lig_dock_data(dname,
-                                                                                                              target_fname_pdbqt,
-                                                                                                              target_setup_fname))
 
 
 def get_score(pdb_block):
