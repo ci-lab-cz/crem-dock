@@ -783,7 +783,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                                           ncpu=ncpu, tmpdir=tmpdir, iteration=iteration, **kwargs)
 
     else:
-        res = __grow_mols(mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+        res = __grow_mols(conn, mols=mols, protein_pdbqt=protein_pdbqt, protonation=protonation, ncpu=ncpu, **kwargs)
 
     if res:
         data = []
