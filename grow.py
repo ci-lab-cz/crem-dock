@@ -621,6 +621,8 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, t
     :return: dict of parent mol and lists of corresponding generated mols
     """
     mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1]
+    if not mols:
+        return None
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))
     scores = get_mol_scores(conn, mol_ids)
