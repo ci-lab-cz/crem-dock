@@ -110,13 +110,13 @@ def update_db(conn, dock_dict, protonation):
     parents_dict ={i: Chem.MolFromMolBlock(block)
                     for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(unique_parents))})', unique_parents)}
 
-    for mol_id, (score, pdb_block) in dock_dict.items():
+    for mol_id, (score, pdbqt_block) in dock_dict.items():
         if protonation:
             smi = list(cur.execute(f"SELECT smi_protonated FROM mols WHERE id = '{mol_id}'"))[0][0]
         else:
             smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
         mol_block = None
-        mol = Chem.MolFromPDBBlock(pdb_block, removeHs=False)
+        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False)
         parent_id = mol_parent_dict[mol_id]
         parent_mol = parents_dict[parent_id]
         if mol:
@@ -143,7 +143,7 @@ def update_db(conn, dock_dict, protonation):
                                rmsd = ? 
                            WHERE
                                id = ?
-                        """, (pdb_block, mol_block, score, rms, mol_id))
+                        """, (pdbqt_block, mol_block, score, rms, mol_id))
     conn.commit()
 
 

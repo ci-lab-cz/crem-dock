@@ -46,7 +46,7 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     :param center: (x_float,y_float,z_float)
     :param box_size: (size_x_int, size_y_int, size_z_int)
     :param ncpu: int
-    :return: (score_top, pdb_string_block)
+    :return: (score_top, pdbqt_string_block)
     '''
     v = Vina(sf_name='vina', cpu=ncpu, seed=1024, no_refine=False, verbosity=0)
     v.set_receptor(rigid_pdbqt_filename=receptor_pdbqt_fname)
@@ -55,10 +55,7 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     #change n_poses
     v.dock(exhaustiveness=32, n_poses=9)
 
-    score_top = v.energies(n_poses=1)[0][0]
-    pdb_top_block = '\n'.join([i[:66] for i in v.poses(n_poses=1).split('MODEL')[1].split('\n')])
-
-    return score_top, pdb_top_block
+    return v.energies(n_poses=1)[0][0], v.poses(n_poses=1)
 
 
 def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
@@ -70,7 +67,7 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
     :param protonation: True or False
     :param iteration: int
     :param ncpu: int
-    :return: dict(mol_id:(energy_float, pdb_string_block),...)
+    :return: dict(mol_id:(energy_float, pdbqt_string_block),...)
     '''
 
     def get_param_from_config(config_fname):
