@@ -74,14 +74,17 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
     '''
 
     def get_param_from_config(config_fname):
-        vina_config_dict = {}
+        config = {}
         with open(config_fname) as inp:
             for line in inp:
                 if not line.strip():
                     continue
                 param_name, value = line.replace(' ', '').split('=')
-                vina_config_dict[param_name] = float(value)
-        return vina_config_dict
+                config[param_name] = float(value)
+
+        center, box_size = (config['center_x'], config['center_y'], config['center_z']),\
+                           (config['size_x'], config['size_y'], config['size_z'])
+        return center, box_size
 
     cur = conn.cursor()
     if protonation:
@@ -90,13 +93,10 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
         smiles_dict = cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'")
 
     mol_ids, smiles = zip(*smiles_dict)
+    center, box_size = get_param_from_config(protein_setup)
 
     pool = Pool(ncpu)
     ligands_pdbqt_string = pool.map(ligand_preparation, smiles)
-    config = get_param_from_config(protein_setup)
-    center, box_size = [config['center_x'], config['center_y'], config['center_z']], [config['size_x'],
-                                                                                      config['size_y'],
-                                                                                      config['size_z']]
     dock_result = pool.map(partial(docking, receptor_pdbqt_fname=receptor_pdbqt_fname, center=center,
                                    box_size=box_size, ncpu=ncpu), iterable=ligands_pdbqt_string)
 
