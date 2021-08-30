@@ -11,7 +11,7 @@ from scripts import mk_prepare_ligand_string
 def ligand_preparation(smi):
     def convert2mol(m):
         def gen_conf(mol, useRandomCoords, randomSeed):
-            params = AllChem.ETKDG()
+            params = AllChem.ETKDGv3()
             params.useRandomCoords = useRandomCoords
             params.randomSeed = randomSeed
             conf_stat = AllChem.EmbedMolecule(mol, params)
