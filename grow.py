@@ -121,14 +121,13 @@ def update_db(conn, dock_result, mol_ids, protonation):
     parent_ids = list(chain.from_iterable(cur.execute(f'SELECT DISTINCT parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids)))
     parents_dict = dict(cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})', parent_ids))
 
-    for mol_id, [score, pose_block] in zip(mol_ids, dock_result):
+    for mol_id, [score, pdb_block] in zip(mol_ids, dock_result):
         if protonation:
             smi = list(cur.execute(f"SELECT smi_protonated FROM mols WHERE id = '{mol_id}'"))[0][0]
         else:
             smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
         mol_block = None
-        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pose_block.split('MODEL')[1].split('\n')]),
-                                   removeHs=False)
+        mol = Chem.MolFromPDBBlock(pdb_block, removeHs=False)
         parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
         parent_mol_block = parents_dict[parent_id]
         if mol:
@@ -141,26 +140,20 @@ def update_db(conn, dock_result, mol_ids, protonation):
                 mol.SetProp('_Name', mol_id)
                 mol_block = Chem.MolToMolBlock(mol)
             except:
-                sys.stderr.write(f'Could not assign bond orders while parsing pose: {mol_id}\n')
-                mol = None
-            if parent_mol_block and mol:
-                parent_mol = Chem.MolFromMolBlock(parent_mol_block)
-                rms = get_rmsd(mol, parent_mol)
-            else:
+                sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
                 rms = None
         else:
-            sys.stderr.write(f'Could not read pose: {mol_id}\n')
+            sys.stderr.write(f'Could not read PDB: {mol_id}\n')
             rms = None
 
         cur.execute("""UPDATE mols
-                                   SET pdb_block = ?,
-                                       mol_block = ?,
-                                       docking_score = ?,
-                                       rmsd = ? 
-                                   WHERE
-                                       id = ?
-                                """, (pose_block, mol_block, score, rms, mol_id))
-
+                           SET pdb_block = ?,
+                               mol_block = ?,
+                               docking_score = ?,
+                               rmsd = ? 
+                           WHERE
+                               id = ?
+                        """, (pdb_block, mol_block, score, rms, mol_id))
     conn.commit()
 
 

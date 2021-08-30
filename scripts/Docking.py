@@ -42,19 +42,23 @@ def ligand_preparation(smi):
 def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     '''
     :param receptor_pdbqt_fname:
-    :param ligands_pdbqt_string: str or list of strs
-    :param center: list [x,y,z]
-    :param box_size: list [size_x, size_y, size_z]
+    :param ligands_pdbqt_string: str or list of strings
+    :param center: (x_float,y_float,z_float)
+    :param box_size: (size_x_int, size_y_int, size_z_int)
     :param ncpu: int
-    :return:
+    :return: (score_top, pdb_string_block)
     '''
     v = Vina(sf_name='vina', cpu=ncpu, seed=1024, no_refine=False, verbosity=0)
     v.set_receptor(rigid_pdbqt_filename=receptor_pdbqt_fname)
     v.set_ligand_from_string(ligands_pdbqt_string)
     v.compute_vina_maps(center=center, box_size=box_size, spacing=1)
+    #change n_poses
     v.dock(exhaustiveness=32, n_poses=9)
 
-    return [v.energies(n_poses=1)[0][0], v.poses(n_poses=1)]
+    score_top = v.energies(n_poses=1)[0][0]
+    pdb_top_block = '\n'.join([i[:66] for i in v.poses(n_poses=1).split('MODEL')[1].split('\n')])
+
+    return score_top, pdb_top_block
 
 
 def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
