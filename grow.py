@@ -108,28 +108,30 @@ def get_score(pdb_block):
     return score_correct
 
 
-
-def update_db(conn, dock_result, mol_ids, protonation):
+def update_db(conn, dock_dict, protonation):
     """
-    Insert score, rmsd, fixed bonds string, pdb and mol blocks of molecules having a corresponding pdbqt file in the
-    temporary dir in docking DB
+    Insert score, rmsd, pdb and mol blocks of the docked molecules to the db
     :param conn: connection to docking DB
-    :param dname: path to temp directory with files after docking. Those files should have names <mol_id>_dock.pdbqt
+    :param dock_dict: dict(mol_id_string:(energy_float, pdb_string_block),..)
+    :param protonation: True or False - to use chemaxon protonated smiles
     :return:
     """
     cur = conn.cursor()
-    parent_ids = list(chain.from_iterable(cur.execute(f'SELECT DISTINCT parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids)))
-    parents_dict = dict(cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})', parent_ids))
+    mol_ids = list(dock_dict.keys())
+    mol_parent_dict = dict(cur.execute(f'SELECT id, parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids))
+    unique_parents = np.unique(list(mol_parent_dict.values()))
+    parents_dict ={i: Chem.MolFromMolBlock(block)
+                    for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(unique_parents))})', unique_parents)}
 
-    for mol_id, [score, pdb_block] in zip(mol_ids, dock_result):
+    for mol_id, (score, pdb_block) in dock_dict.items():
         if protonation:
             smi = list(cur.execute(f"SELECT smi_protonated FROM mols WHERE id = '{mol_id}'"))[0][0]
         else:
             smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
         mol_block = None
         mol = Chem.MolFromPDBBlock(pdb_block, removeHs=False)
-        parent_id = list(cur.execute(f"SELECT parent_id FROM mols WHERE id = '{mol_id}'"))[0][0]
-        parent_mol_block = parents_dict[parent_id]
+        parent_id = mol_parent_dict[mol_id]
+        parent_mol = parents_dict[parent_id]
         if mol:
             try:
                 template_mol = Chem.MolFromSmiles(smi)
@@ -139,6 +141,7 @@ def update_db(conn, dock_result, mol_ids, protonation):
                 mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
                 mol.SetProp('_Name', mol_id)
                 mol_block = Chem.MolToMolBlock(mol)
+                rms = get_rmsd(mol, parent_mol)
             except:
                 sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
                 rms = None
@@ -703,9 +706,10 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
     if protonation:
         add_protonation(conn, iteration)
     if make_docking:
-        dock_result, mol_ids = Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+        dock_result = Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, iteration=iteration, ncpu=ncpu)
-        update_db(conn, dock_result, mol_ids, protonation)
+        update_db(conn, dock_result, protonation)
+        mol_ids = list(dock_result.keys())
     else:
         mol_ids = get_docked_mol_ids(conn, iteration)
 

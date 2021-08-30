@@ -67,10 +67,10 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
     :param conn:
     :param receptor_pdbqt_fname:
     :param protein_setup:
-    :param protonation:
-    :param iteration:
-    :param ncpu:
-    :return: [[energy_lig1, pose_lig1]...[energy_ligN, pose_ligN]]
+    :param protonation: True or False
+    :param iteration: int
+    :param ncpu: int
+    :return: dict(mol_id:(energy_float, pdb_string_block),...)
     '''
 
     def get_param_from_config(config_fname):
@@ -100,4 +100,4 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
     dock_result = pool.map(partial(docking, receptor_pdbqt_fname=receptor_pdbqt_fname, center=center,
                                    box_size=box_size, ncpu=ncpu), iterable=ligands_pdbqt_string)
 
-    return dock_result, mol_ids
+    return {i: k for i, k in zip(mol_ids, dock_result)}
