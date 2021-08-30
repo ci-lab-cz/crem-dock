@@ -1,12 +1,3 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-#
-#
-
-import argparse
-import os
-import sys
-
 from openbabel import openbabel as ob
 
 from meeko import MoleculePreparation
