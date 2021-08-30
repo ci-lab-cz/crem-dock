@@ -1,5 +1,3 @@
-import subprocess
-import tempfile
 from functools import partial
 from multiprocessing import Pool
 
@@ -82,24 +80,12 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
         return vina_config_dict
 
     cur = conn.cursor()
-    smiles = cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'")
-    smiles, mol_ids = zip(*smiles)
     if protonation:
-        try:
-            fp = tempfile.NamedTemporaryFile(suffix='.smi')
-            fp.writelines('{0}\t{1}\n'.format(item[0], item[1]).encode('utf-8') for item in zip(smiles, mol_ids))
-            cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fp.name}'"
-            smiles = subprocess.check_output(cmd_run, shell=True).decode().split()
-            for mol_id, smi_protonated in zip(mol_ids, smiles):
-                cur.execute("""UPDATE mols
-                                   SET smi_protonated = ? 
-                                   WHERE
-                                       id = ?
-                                """,
-                            (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
-            conn.commit()
-        finally:
-            fp.close()
+        smiles_dict = cur.execute(f"SELECT id, smi_protonated FROM mols WHERE iteration = '{iteration - 1}'")
+    else:
+        smiles_dict = cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'")
+
+    mol_ids, smiles = zip(*smiles_dict)
 
     pool = Pool(ncpu)
     ligands_pdbqt_string = pool.map(ligand_preparation, smiles)

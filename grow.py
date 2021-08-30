@@ -5,7 +5,9 @@ import random
 import shutil
 import sqlite3
 import string
+import subprocess
 import sys
+import tempfile
 import traceback
 from itertools import combinations, chain
 from multiprocessing import cpu_count
@@ -63,6 +65,33 @@ def set_common_atoms(mol_name, child_mol, parent_mol, conn):
                        WHERE
                            id = ?
                     """, (atoms, mol_name))
+    conn.commit()
+
+
+def add_protonation(conn, iteration):
+    '''
+    Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4. Parse output and update conn db.
+    :param conn:
+    :param mol_ids:
+    :param smiles:
+    :return:
+    '''
+    cur = conn.cursor()
+    smiles_dict = cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'")
+    smiles, mol_ids = zip(*smiles_dict)
+
+    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+        tmp.writelines(['\n'.join(smiles)])
+        tmp.seek(0)
+        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}'"
+        smiles_protonated = subprocess.check_output(cmd_run, shell=True).decode().split()
+
+    for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
+        cur.execute("""UPDATE mols
+                       SET smi_protonated = ?
+                       WHERE
+                           id = ?
+                    """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
     conn.commit()
 
 
@@ -678,6 +707,8 @@ def get_canon_for_atom_idx(mol, idx):
 
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, debug, make_docking=True, make_selection=True, **kwargs):
+    if protonation:
+        add_protonation(conn, iteration)
     if make_docking:
         dock_result, mol_ids = Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, iteration=iteration, ncpu=ncpu)
