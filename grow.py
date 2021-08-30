@@ -9,7 +9,7 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from itertools import combinations, chain
+from itertools import combinations
 from multiprocessing import cpu_count
 
 import matplotlib.pyplot as plt
@@ -93,19 +93,6 @@ def add_protonation(conn, iteration):
                            id = ?
                     """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
     conn.commit()
-
-
-def get_score(pdb_block):
-    """
-    Return correct docking score
-    :param pdb_block:
-    :return:
-    """
-    score = float(pdb_block.split()[5])
-    active_torsions = int(pdb_block.split('active torsions')[0][-2])
-    all_torsions = int(pdb_block.split('TORSDOF')[1].split('\n')[0])
-    score_correct = round(score * (1 + 0.0585 * active_torsions) / (1 + 0.0585 * all_torsions), 2)
-    return score_correct
 
 
 def update_db(conn, dock_dict, protonation):
@@ -201,9 +188,6 @@ def get_mols(conn, mol_ids):
     sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
     mols = []
     for items in cur.execute(sql, mol_ids):
-        # remove it
-        if items[0] is None:
-            continue
         m = Chem.MolFromMolBlock(items[0], removeHs=False)
         if not m:
             continue
@@ -702,7 +686,7 @@ def get_canon_for_atom_idx(mol, idx):
 
 
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, protonation, debug, make_docking=True, make_selection=True, **kwargs):
+                   ncpu, tmpdir, protonation, make_docking=True, make_selection=True, **kwargs):
     if protonation:
         add_protonation(conn, iteration)
     if make_docking:
@@ -824,8 +808,8 @@ def main():
     parser.add_argument('--tmpdir', metavar='DIRNAME', default=None,
                         help='directory where temporary files will be stored. If omitted atmp dir will be created in '
                              'the same location as output DB.')
-    parser.add_argument('--debug', action='store_true', default=False,
-                        help='enable debug mode; all tmp files will not be erased.')
+    # parser.add_argument('--debug', action='store_true', default=False,
+    #                     help='enable debug mode; all tmp files will not be erased.')
     parser.add_argument('-n', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus. Default: 1.')
 
@@ -871,8 +855,7 @@ def main():
                                  make_selection=make_selection,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, protonation=not args.no_protonation,
-                                 debug=args.debug)
+                                 max_replacements=args.max_replacements, protonation=not args.no_protonation)
             make_docking = True
             make_selection = True
 

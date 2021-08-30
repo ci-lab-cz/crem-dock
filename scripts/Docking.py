@@ -41,8 +41,8 @@ def ligand_preparation(smi):
 
 def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     '''
-    :param receptor_pdbqt_fname:
     :param ligands_pdbqt_string: str or list of strings
+    :param receptor_pdbqt_fname:
     :param center: (x_float,y_float,z_float)
     :param box_size: (size_x_int, size_y_int, size_z_int)
     :param ncpu: int
