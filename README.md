@@ -3,7 +3,8 @@
 * **RDKit**  
 * **AutoDock Vina** 
 * **Openbabel (>=3)**
-* **Meeko (dev version)**
+* **Meeko**
+* **Scipy**
 
 ## Installation
 ```
@@ -32,9 +33,12 @@ or installation using pip:
 conda install -c conda-forge openbabel
 ```
 
-**Meeko (from source)**
+**Meeko**
 ```
-git clone https://github.com/ccsb-scripps/Meeko
-cd Meeko
-python setup.py build install
+pip install git+https://github.com/ccsb-scripps/Meeko
+```
+
+**Scipy**
+```
+conda install scipy
 ```
