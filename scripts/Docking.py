@@ -1,73 +1,100 @@
-from os import system
+from functools import partial
+from multiprocessing import Pool
+
 from rdkit import Chem
+from rdkit.Chem import AllChem
+from vina import Vina
+
+from scripts import mk_prepare_ligand_string
 
 
-# class VinaDock:
-#
-#     def __init__(self, vina_scripts_path, vina_path, ...):
-#         pass
-#
-#     def prepare_ligands(self, dname, ncpu):
-#         pass
-#
-#     def dock_ligands(self, dname, target_pdbqt, target_setup, ncpu):
-#         pass
+def ligand_preparation(smi):
+    def convert2mol(m):
+        def gen_conf(mol, useRandomCoords, randomSeed):
+            params = AllChem.ETKDGv3()
+            params.useRandomCoords = useRandomCoords
+            params.randomSeed = randomSeed
+            conf_stat = AllChem.EmbedMolecule(mol, params)
+            return mol, conf_stat
 
-def prepare_target(i_fname, o_fname, pythonADT, script_file, param=''):
+        if not m:
+            return None
+        m = Chem.AddHs(m, addCoords=True)
+        m, conf_stat = gen_conf(m, useRandomCoords=False, randomSeed=1024)
+        if conf_stat == -1:
+            # if molecule is big enough and rdkit cannot generate a conformation - use params.useRandomCoords = True
+            m, conf_stat = gen_conf(m, useRandomCoords=True, randomSeed=1024)
+            if conf_stat == -1:
+                return None
+        AllChem.UFFOptimizeMolecule(m, maxIters=100)
+        return Chem.MolToMolBlock(m)
+
+    mol = Chem.MolFromSmiles(smi)
+    mol_conf_sdf = convert2mol(mol)
+    mol_conf_pdbqt = mk_prepare_ligand_string.main(mol_conf_sdf,
+                                                   build_macrocycle=False, # can do it True, but there is some problem with >=7-chains mols
+                                                   add_water=False, merge_hydrogen=True, add_hydrogen=False,
+                                                   # pH_value=7.4, can use this opt but some results are different in comparison to chemaxon
+                                                   verbose=False, mol_format='SDF')
+    return mol_conf_pdbqt
+
+
+def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     '''
-    Preprocess target file for docking to Vina
-    :param i_fname: path for target file (pdb)
-    :param o_fname: output path for target file (pdbqt)
-    :param param: param. Example '-A bonds_hydrogens -e True'
-    :param pythonADT: python path for AutoDock . Example bin/mgltools_x86_64Linux2_1.5.6/bin/python'
-    :param script_file: script path for AutoDock. Example 'bin/mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py',
-    :return: None
+    :param ligands_pdbqt_string: str or list of strings
+    :param receptor_pdbqt_fname:
+    :param center: (x_float,y_float,z_float)
+    :param box_size: (size_x_int, size_y_int, size_z_int)
+    :param ncpu: int
+    :return: (score_top, pdbqt_string_block)
+    '''
+    v = Vina(sf_name='vina', cpu=ncpu, seed=1024, no_refine=False, verbosity=0)
+    v.set_receptor(rigid_pdbqt_filename=receptor_pdbqt_fname)
+    v.set_ligand_from_string(ligands_pdbqt_string)
+    v.compute_vina_maps(center=center, box_size=box_size, spacing=1)
+    #change n_poses
+    v.dock(exhaustiveness=32, n_poses=9)
+
+    return v.energies(n_poses=1)[0][0], v.poses(n_poses=1)
+
+
+def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
     '''
 
-    system(' '.join([pythonADT, script_file, '-r', i_fname, '-o', o_fname, param]))
-
-
-def prepare_ligands_mp(items):
-    return prepare_ligand(*items)
-
-
-def prepare_ligand(i_fname, o_fname, pythonADT, script_file, atoms=None, param=''):
+    :param conn:
+    :param receptor_pdbqt_fname:
+    :param protein_setup:
+    :param protonation: True or False
+    :param iteration: int
+    :param ncpu: int
+    :return: dict(mol_id:(energy_float, pdbqt_string_block),...)
     '''
-    Preprocess ligand file for docking to Vina
-    :param i_fname: path for ligand file (pdb)
-    :param o_fname: output path for ligand file (pdbqt)
-    :param param: param. Example for default setting use (), another use  '-A bonds_hydrogens'
-    :param pythonADT: python path for AutoDock . Example 'bin/mgltools_x86_64Linux2_1.5.6/bin/python'
-    :param script_file: script path for AutoDock. Example 'bin/mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/prepare_receptor4.py',
-    :return: None
-    '''
-    if atoms:
-        system(' '.join([pythonADT, script_file, '-l', '"{}"'.format(i_fname), '-o', '"{}"'.format(o_fname), '-I', '"{}"'.format(atoms), param]))
+
+    def get_param_from_config(config_fname):
+        config = {}
+        with open(config_fname) as inp:
+            for line in inp:
+                if not line.strip():
+                    continue
+                param_name, value = line.replace(' ', '').split('=')
+                config[param_name] = float(value)
+
+        center, box_size = (config['center_x'], config['center_y'], config['center_z']),\
+                           (config['size_x'], config['size_y'], config['size_z'])
+        return center, box_size
+
+    cur = conn.cursor()
+    if protonation:
+        smiles_dict = cur.execute(f"SELECT id, smi_protonated FROM mols WHERE iteration = '{iteration - 1}'")
     else:
-        system(' '.join([pythonADT, script_file, '-l', '"{}"'.format(i_fname), '-o', '"{}"'.format(o_fname), param]))
+        smiles_dict = cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'")
 
-def run_docking(ligand_in_fname, ligand_out_fname, target_fname, config, script_file, param=''):
-    '''
-    Run vina docking
-    :param target_fname: target file
-    :param ligand: ligand file
-    :param out: output file
-    :param config: config file contains coordinations of gridbox
-    :param param: param. Default: None. example: '--energy_range 0 --cpu 2'. More about param in bin/AutodockVina/vina --help
-    :param script_file: Vina path. Default: bin/AutodockVina/vina
-    :return: None
-    '''
+    mol_ids, smiles = zip(*smiles_dict)
+    center, box_size = get_param_from_config(protein_setup)
 
-    system(' '.join([script_file,
-                     '--receptor', '"{}"'.format(target_fname), '--ligand', '"{}"'.format(ligand_in_fname),
-                     '--out', '"{}"'.format(ligand_out_fname), '--config', '"{}"'.format(config), param]))
+    pool = Pool(ncpu)
+    ligands_pdbqt_string = pool.map(ligand_preparation, smiles)
+    dock_result = pool.map(partial(docking, receptor_pdbqt_fname=receptor_pdbqt_fname, center=center,
+                                   box_size=box_size, ncpu=ncpu), iterable=ligands_pdbqt_string)
 
-
-if __name__ == '__main__':
-    python = 'bin/mgltools_x86_64Linux2_1.5.6/bin/python'
-    script = 'bin/mgltools_x86_64Linux2_1.5.6/MGLToolsPckgs/AutoDockTools/Utilities24/{}'
-    prepare_target(i_fname='1t4u.pdb', o_fname='1t4u.pdbqt', param='-A bonds_hydrogens -e True',
-                   pythonADT=python, script_file=script.format('prepare_receptor4.py'))
-    prepare_ligand(i_fname='ref.pdb', o_fname='ref_lig.pdbqt', param='',
-                   pythonADT=python, script_file=script.format('prepare_ligand4.py'))
-    # run_docking(t_fname='1t4u.pdb', l_fname='1t4u_lig.pdbqt', o_fname='ttt', config='1t4u.log', script_file='bin/vina')
+    return {i: k for i, k in zip(mol_ids, dock_result)}
