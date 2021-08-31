@@ -105,10 +105,10 @@ def update_db(conn, dock_dict, protonation):
     """
     cur = conn.cursor()
     mol_ids = list(dock_dict.keys())
-    mol_parent_dict = dict(cur.execute(f'SELECT id, parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids))
-    unique_parents = np.unique(list(mol_parent_dict.values()))
-    parents_dict ={i: Chem.MolFromMolBlock(block)
-                    for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(unique_parents))})', unique_parents)}
+    parent_ids = dict(cur.execute(f'SELECT id, parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids))
+    parent_mols = dict()
+    for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})',parent_ids):
+        parent_mols[i] = Chem.MolFromMolBlock(block)
 
     for mol_id, (score, pdbqt_block) in dock_dict.items():
         if protonation:
@@ -117,12 +117,12 @@ def update_db(conn, dock_dict, protonation):
             smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
         mol_block = None
         mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False)
-        parent_id = mol_parent_dict[mol_id]
-        parent_mol = parents_dict[parent_id]
         if mol:
             try:
+                parent_mol = parent_mols[parent_ids[mol_id]]
                 template_mol = Chem.MolFromSmiles(smi)
-                # explicit hydrogends are removed from carbon atoms (chiral hydrogens) to match pdbqt mol, e.g. [NH3+][C@H](C)C(=O)[O-]
+                # explicit hydrogends are removed from carbon atoms (chiral hydrogens) to match pdbqt mol,
+                # e.g. [NH3+][C@H](C)C(=O)[O-]
                 template_mol = Chem.AddHs(template_mol, explicitOnly=True,
                                           onlyOnAtoms=[a.GetIdx() for a in template_mol.GetAtoms() if a.GetAtomicNum() != 6])
                 mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
