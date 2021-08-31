@@ -105,11 +105,17 @@ def update_db(conn, dock_dict, protonation):
     """
     cur = conn.cursor()
     mol_ids = list(dock_dict.keys())
-    parent_ids = dict(cur.execute(f'SELECT id, parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids))
-    uniq_parent_ids = set(parent_ids.values())
+
+    # parent_ids and parent_mols can be empty if all compounds do not have parents
+    parent_ids = dict(cur.execute(f'SELECT id, parent_id '
+                                  f'FROM mols '
+                                  f'WHERE id IN ({",".join("?" * len(mol_ids))}) AND '
+                                  f'parent_id iS NOT NULL', mol_ids))
+    uniq_parent_ids = list(set(parent_ids.values()))
     parent_mols = dict()
-    for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(uniq_parent_ids))})', uniq_parent_ids):
-        parent_mols[i] = Chem.MolFromMolBlock(block)
+    if uniq_parent_ids:
+        for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(uniq_parent_ids))})', uniq_parent_ids):
+            parent_mols[i] = Chem.MolFromMolBlock(block)
 
     for mol_id, (score, pdbqt_block) in dock_dict.items():
         if protonation:
@@ -117,10 +123,10 @@ def update_db(conn, dock_dict, protonation):
         else:
             smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
         mol_block = None
+        rms = None
         mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False)
         if mol:
             try:
-                parent_mol = parent_mols[parent_ids[mol_id]]
                 template_mol = Chem.MolFromSmiles(smi)
                 # explicit hydrogends are removed from carbon atoms (chiral hydrogens) to match pdbqt mol,
                 # e.g. [NH3+][C@H](C)C(=O)[O-]
@@ -129,13 +135,14 @@ def update_db(conn, dock_dict, protonation):
                 mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
                 mol.SetProp('_Name', mol_id)
                 mol_block = Chem.MolToMolBlock(mol)
+                parent_mol = parent_mols[parent_ids[mol_id]]  # it is important to be after mol_block, as it can cause error if parent mol is missing (on the first iteration)
                 rms = get_rmsd(mol, parent_mol)
+            except KeyError:  # missing parent mol
+                pass
             except:
                 sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
-                rms = None
         else:
             sys.stderr.write(f'Could not read PDB: {mol_id}\n')
-            rms = None
 
         cur.execute("""UPDATE mols
                            SET pdb_block = ?,
@@ -385,14 +392,15 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     if mol.HasProp('protected_user_canon_ids'):
         _protected_user_ids = set(get_atom_idxs_for_canon(mol, [int(i) for i in mol.GetProp('protected_user_canon_ids').split(',')]))
     _protected_alg_ids = set(get_protected_ids(mol, protein_xyz, h_dist_threshold))
-    protected_ids = _protected_alg_ids & _protected_user_ids
+    protected_ids = _protected_alg_ids | _protected_user_ids
 
-    if protonation and protected_ids:
+    if protonation:
         mol_id = mol.GetProp('_Name')
         cur = conn.cursor()
         mol2 = Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0])  # non-protonated mol
         mol2.SetProp('_Name', mol_id)
-        protected_ids = find_protected_ids(protected_ids, mol, mol2)
+        if protected_ids:
+            protected_ids = find_protected_ids(protected_ids, mol, mol2)
         mol = mol2
 
     try:
@@ -404,6 +412,9 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
                          f'{mol.GetProp("_Name")}\n'
                          f'{Chem.MolToSmiles(mol)}')
         res = []
+
+    res = tuple(m for smi, m in res)
+
     return res
 
 
@@ -735,32 +746,32 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
         nmols = -1
 
-        for parent_mol, product_mols in res.items():
-            for mol in product_mols:
+        for parent_mol, child_mols in res.items():
+            parent_mol = Chem.AddHs(parent_mol)
+            for mol in child_mols:
                 nmols += 1
                 # this is a workaround for rdkit issue - if a double bond has STEREOANY it will cause errors at
                 # stereoisomer enumeration, we replace STEREOANY with STEREONONE in these cases
                 try:
-                    isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
+                    isomers = tuple(EnumerateStereoisomers(mol, options=opts))
                 except RuntimeError:
                     for bond in mol[1].GetBonds():
                         if bond.GetStereo() == Chem.BondStereo.STEREOANY:
                             bond.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
-                    isomers = tuple(EnumerateStereoisomers(mol[1], options=opts))
+                    isomers = tuple(EnumerateStereoisomers(mol, options=opts))
                 for i, m in enumerate(isomers):
                     m = Chem.AddHs(m)
-                    parent_mol = Chem.AddHs(parent_mol)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
                     child_protected_canon_user_id = None
                     if parent_mol.HasProp('protected_user_canon_ids') and parent_mol.GetProp('protected_user_canon_ids'):
                         parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol,
                                                                             [int(idx) for idx in parent_mol.GetProp('protected_user_canon_ids').split(',')])
                         child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
-                        child_protected_canon_user_id = get_canon_for_atom_idx(m, child_protected_user_id)
+                        child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
                     data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
                                  parent_mol.GetProp('_Name'), None, None, None, None, None,
-                                 ','.join(map(str, child_protected_canon_user_id))))
+                                 child_protected_canon_user_id))
 
         insert_db(conn, data)
         return True
@@ -771,7 +782,8 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Fragment growing within binding pocket with Autodock Vina.')
+    parser = argparse.ArgumentParser(description='Fragment growing within binding pocket with Autodock Vina.',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-i', '--input_frags', metavar='FILENAME', required=False,
                         help='SMILES file with input fragments or SDF file with 3D coordinates of pre-aligned input '
                              'fragments (e.g. from PDB complexes). '
