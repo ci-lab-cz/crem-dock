@@ -106,8 +106,9 @@ def update_db(conn, dock_dict, protonation):
     cur = conn.cursor()
     mol_ids = list(dock_dict.keys())
     parent_ids = dict(cur.execute(f'SELECT id, parent_id FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids))
+    uniq_parent_ids = set(parent_ids.values())
     parent_mols = dict()
-    for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(parent_ids))})',parent_ids):
+    for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(uniq_parent_ids))})', uniq_parent_ids):
         parent_mols[i] = Chem.MolFromMolBlock(block)
 
     for mol_id, (score, pdbqt_block) in dock_dict.items():
