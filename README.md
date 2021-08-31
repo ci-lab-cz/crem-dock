@@ -5,6 +5,7 @@
 * **Openbabel (>=3)**
 * **Meeko**
 * **Scipy**
+* **CReM**
 
 ## Installation
 ```
@@ -25,7 +26,9 @@ conda install -c conda-forge -c ccsb-scripps vina
 
 or installation using pip:
 
-``` pip install vina```    
+```
+pip install vina
+```    
 
 
 **Openbabel**
@@ -41,4 +44,9 @@ pip install git+https://github.com/ccsb-scripps/Meeko
 **Scipy**
 ```
 conda install scipy
+```
+
+**CReM**
+```
+pip install crem
 ```
