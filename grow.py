@@ -38,6 +38,22 @@ def sort_two_lists(primary, secondary):
     return map(list, zip(*paired_sorted))  # two lists
 
 
+def neutralize_atoms(mol):
+    # https://www.rdkit.org/docs/Cookbook.html#neutralizing-molecules
+    pattern = Chem.MolFromSmarts("[+1!h0!$([*]~[-1,-2,-3,-4]),-1!$([*]~[+1,+2,+3,+4])]")
+    at_matches = mol.GetSubstructMatches(pattern)
+    at_matches_list = [y[0] for y in at_matches]
+    if len(at_matches_list) > 0:
+        for at_idx in at_matches_list:
+            atom = mol.GetAtomWithIdx(at_idx)
+            chg = atom.GetFormalCharge()
+            hcount = atom.GetTotalNumHs()
+            atom.SetFormalCharge(0)
+            atom.SetNumExplicitHs(hcount - chg)
+            atom.UpdatePropertyCache()
+    return mol
+
+
 def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
@@ -162,6 +178,8 @@ def get_rmsd(child_mol, parent_mol):
     :param parent_mol: Mol
     :return:
     """
+    child_mol = neutralize_atoms(Chem.RemoveHs(child_mol))
+    parent_mol = neutralize_atoms(Chem.RemoveHs(parent_mol))
     match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
     best_rms = float('inf')
     for ids in match_ids:
