@@ -775,7 +775,9 @@ def main():
                         help='SMILES file with input fragments or SDF file with 3D coordinates of pre-aligned input '
                              'fragments (e.g. from PDB complexes). '
                              'If SDF contain <protected_user_ids> field (comma-separated 1-based indices) '
-                             'these atoms will be protected from growing.')
+                             'these atoms will be protected from growing. This argument can be omitted if an existed '
+                             'output DB is specified, then docking will be continued from the last successful '
+                             'iteration. Optional.')
     parser.add_argument('-o', '--output', metavar='FILENAME', required=True,
                         help='SQLite DB with docking results. If an existed DB was supplied input fragments will be '
                              'ignored if any and the program will continue docking from the last successful iteration.')
