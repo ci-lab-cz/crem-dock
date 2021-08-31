@@ -70,10 +70,10 @@ def set_common_atoms(mol_name, child_mol, parent_mol, conn):
 
 def add_protonation(conn, iteration):
     '''
-    Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4. Parse output and update conn db.
+    Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
+    Parse output and update db.
     :param conn:
-    :param mol_ids:
-    :param smiles:
+    :param iteration:
     :return:
     '''
     cur = conn.cursor()
