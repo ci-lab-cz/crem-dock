@@ -487,8 +487,7 @@ def insert_starting_structures_to_db(fname, db_fname):
                     if mol.HasProp('protected_user_ids'):
                         # rdkit numeration starts with 0 and sdf numeration starts with 1
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
-                        protected_user_canon_ids = ','.join([str(canon_idx) for canon_idx in
-                                                                    get_canon_for_atom_idx(mol, protected_user_ids)])
+                        protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
 
                     data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None, None, None, None,
                                  Chem.MolToMolBlock(mol), protected_user_canon_ids))
@@ -521,6 +520,7 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, 
     :param mols:
     :param conn:
     :param protein_pdbqt:
+    :param protonation:
     :param ntop:
     :param ncpu:
     :param kwargs:
@@ -538,6 +538,7 @@ def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop,
     :param conn:
     :param tanimoto:
     :param protein_pdbqt:
+    :param protonation:
     :param ntop:
     :param ncpu:
     :param kwargs:
@@ -564,6 +565,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, 
     :param conn:
     :param tanimoto:
     :param protein_pdbqt:
+    :param protonation:
     :param ntop:
     :param ncpu:
     :param kwargs:
@@ -619,7 +621,7 @@ def identify_pareto(df, tmpdir):
     return population_ids[pareto_front].tolist()
 
 
-def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, tmpdir, iteration, **kwargs):
+def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, tmpdir, **kwargs):
     """
 
     :param mols:
@@ -627,9 +629,9 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, t
     :param mw:
     :param rtb:
     :param protein_pdbqt:
+    :param protonation:
     :param ncpu:
     :param tmpdir:
-    :param iteration:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
@@ -647,12 +649,12 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, t
     return res
 
 
-def get_product_atom_protected(mol, protected_parent_ids):
+def get_child_protected_atom_ids(mol, protected_parent_ids):
     '''
 
     :param mol:
     :param protected_parent_ids: list[int]
-    :type   protected_parent_ids: list[int]
+    :type  protected_parent_ids: list[int]
     :return: sorted list of integers
     '''
     # After RDKit reaction procedure there is a field <react_atom_idx> with initial parent atom idx in product mol
@@ -668,7 +670,7 @@ def get_atom_idxs_for_canon(mol, canon_idxs):
     get the rdkit current indices for the canonical indices of the molecule
     :param mol:
     :param canon_idxs: list[int]
-    :return:  sorted list of integers
+    :return: sorted list of integers
     '''
     canon_ranks = np.array(Chem.CanonicalRankAtoms(mol))
     return sorted(np.where(np.isin(canon_ranks, canon_idxs))[0].tolist())
@@ -691,7 +693,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         add_protonation(conn, iteration)
     if make_docking:
         dock_result = Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, iteration=iteration, ncpu=ncpu)
+                                           protonation=protonation, iteration=iteration, ncpu=ncpu)
         update_db(conn, dock_result, protonation)
         mol_ids = list(dock_result.keys())
     else:
@@ -711,17 +713,18 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                 print(f'iteration{iteration}: no molecule was selected by rmsd')
         if mols:
             if alg_type == 1:
-                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, protonation=protonation, ntop=ntop, ncpu=ncpu,
-                                            **kwargs)
+                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, protonation=protonation,
+                                            ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
-                res = selection_grow_clust_deep(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt, protonation=protonation,
-                                                ntop=ntop, ncpu=ncpu, **kwargs)
+                res = selection_grow_clust_deep(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
+                                                protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
-                res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt, protonation=protonation,
-                                           ntop=ntop, ncpu=ncpu, **kwargs)
+                res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
+                                           protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
-                res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt, protonation=protonation,
-                                          ncpu=ncpu, tmpdir=tmpdir, iteration=iteration, **kwargs)
+                res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
+                                          protonation=protonation, ncpu=ncpu, tmpdir=tmpdir, iteration=iteration,
+                                          **kwargs)
 
     else:
         res = __grow_mols(conn, mols=mols, protein_pdbqt=protein_pdbqt, protonation=protonation, ncpu=ncpu, **kwargs)
@@ -747,15 +750,16 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                     m = Chem.AddHs(m)
                     parent_mol = Chem.AddHs(parent_mol)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
-                    product_protected_canon_user_id = None
+                    child_protected_canon_user_id = None
                     if parent_mol.HasProp('protected_user_canon_ids') and parent_mol.GetProp('protected_user_canon_ids'):
                         parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol,
                                                                             [int(idx) for idx in parent_mol.GetProp('protected_user_canon_ids').split(',')])
-                        product_protected_user_id = get_product_atom_protected(m, parent_protected_user_ids)
-                        product_protected_canon_user_id = ','.join([str(canon_idx) for canon_idx in get_canon_for_atom_idx(m, product_protected_user_id)])
+                        child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
+                        child_protected_canon_user_id = get_canon_for_atom_idx(m, child_protected_user_id)
 
-                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None, parent_mol.GetProp('_Name'), None, None, None, None, None,
-                                 product_protected_canon_user_id))
+                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
+                                 parent_mol.GetProp('_Name'), None, None, None, None, None,
+                                 ','.join(map(str, child_protected_canon_user_id))))
 
         insert_db(conn, data)
         return True
@@ -770,8 +774,8 @@ def main():
     parser.add_argument('-i', '--input_frags', metavar='FILENAME', required=False,
                         help='SMILES file with input fragments or SDF file with 3D coordinates of pre-aligned input '
                              'fragments (e.g. from PDB complexes). '
-                             'SDF also may contain <protected_user_ids> filed where are atoms ids which are protected to grow (comma-sep).'
-                             ' Optional argument.')
+                             'If SDF contain <protected_user_ids> field (comma-separated 1-based indices) '
+                             'these atoms will be protected from growing.')
     parser.add_argument('-o', '--output', metavar='FILENAME', required=True,
                         help='SQLite DB with docking results. If an existed DB was supplied input fragments will be '
                              'ignored if any and the program will continue docking from the last successful iteration.')
