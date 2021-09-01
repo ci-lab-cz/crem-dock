@@ -379,31 +379,31 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
 
 def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
 
-    def find_protected_ids(protected_ids, mol1, mol2):
-        """
-        Find a correspondence between protonated and non-protonated structures to transfer prpotected ids
-        to non-protonated molecule
-        :param protected_ids: ids of heavy atoms protected in protonated mol1
-        :param mol1: protonated mol
-        :param mol2: non-protonated mol
-        :return: set of ids of heavy atoms which should be protected in non-protonated mol2
-        """
-        mcs = rdFMCS.FindMCS((mol1, mol2)).queryMol
-        mcs1, mcs2 = mol1.GetSubstructMatches(mcs), mol2.GetSubstructMatches(mcs)
-        # mcs1 = list(set(frozenset(i) for i in mcs1))
-        # mcs2 = list(set(frozenset(i) for i in mcs2))
-        if len(mcs1) > 1 or len(mcs2) > 1:
-            sys.stderr.write(f'MCS has multiple mappings in one of these structures: protonated smi '
-                             f'{Chem.MolToSmiles(mol1)} or non-protonated smi {Chem.MolToSmiles(mol2)}. '
-                             f'One randomly choosing mapping will be used to determine protected atoms.\n')
-        mcs1 = mcs1[0]
-        mcs2 = mcs2[0]
-        # we protect the same atoms which were protected in a protonated mol. Atoms which lost H after protonation
-        # will never be selected as protected by the algorithm (only one exception if this heavy atoms bears more
-        # than one H), so there is no need to specifically process them. Atoms, to which H were added after protonation,
-        # will be protected only if all H atoms are close to a protein
-        ids = [j for i, j in zip(mcs1, mcs2) if i in protected_ids]
-        return ids
+    # def find_protected_ids(protected_ids, mol1, mol2):
+    #     """
+    #     Find a correspondence between protonated and non-protonated structures to transfer prpotected ids
+    #     to non-protonated molecule
+    #     :param protected_ids: ids of heavy atoms protected in protonated mol1
+    #     :param mol1: protonated mol
+    #     :param mol2: non-protonated mol
+    #     :return: set of ids of heavy atoms which should be protected in non-protonated mol2
+    #     """
+    #     mcs = rdFMCS.FindMCS((mol1, mol2)).queryMol
+    #     mcs1, mcs2 = mol1.GetSubstructMatches(mcs), mol2.GetSubstructMatches(mcs)
+    #     # mcs1 = list(set(frozenset(i) for i in mcs1))
+    #     # mcs2 = list(set(frozenset(i) for i in mcs2))
+    #     if len(mcs1) > 1 or len(mcs2) > 1:
+    #         sys.stderr.write(f'MCS has multiple mappings in one of these structures: protonated smi '
+    #                          f'{Chem.MolToSmiles(mol1)} or non-protonated smi {Chem.MolToSmiles(mol2)}. '
+    #                          f'One randomly choosing mapping will be used to determine protected atoms.\n')
+    #     mcs1 = mcs1[0]
+    #     mcs2 = mcs2[0]
+    #     # we protect the same atoms which were protected in a protonated mol. Atoms which lost H after protonation
+    #     # will never be selected as protected by the algorithm (only one exception if this heavy atoms bears more
+    #     # than one H), so there is no need to specifically process them. Atoms, to which H were added after protonation,
+    #     # will be protected only if all H atoms are close to a protein
+    #     ids = [j for i, j in zip(mcs1, mcs2) if i in protected_ids]
+    #     return ids
 
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
@@ -412,14 +412,23 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     _protected_alg_ids = set(get_protected_ids(mol, protein_xyz, h_dist_threshold))
     protected_ids = _protected_alg_ids | _protected_user_ids
 
-    if protonation:
-        mol_id = mol.GetProp('_Name')
-        cur = conn.cursor()
-        mol2 = Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0])  # non-protonated mol
-        mol2.SetProp('_Name', mol_id)
-        if protected_ids:
-            protected_ids = find_protected_ids(protected_ids, mol, mol2)
-        mol = mol2
+    # remove explicit hydrogen and charges and redefine protected atom ids
+    for i in protected_ids:
+        mol.GetAtomWithIdx(i).SetIntProp('__tmp', 1)
+    mol = neutralize_atoms(Chem.RemoveHs(mol))
+    protected_ids = []
+    for a in mol.GetAtoms():
+        if a.HasProp('_tmp') and a.GetIntProp('_tmp'):
+            protected_ids.append(a.GetIdx())
+
+    # if protonation:
+    #     mol_id = mol.GetProp('_Name')
+    #     cur = conn.cursor()
+    #     mol2 = Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0])  # non-protonated mol
+    #     mol2.SetProp('_Name', mol_id)
+    #     if protected_ids:
+    #         protected_ids = find_protected_ids(protected_ids, mol, mol2)
+    #     mol = mol2
 
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
