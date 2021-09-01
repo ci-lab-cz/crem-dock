@@ -897,28 +897,31 @@ def main():
 
         conn = sqlite3.connect(args.output)
 
-        while True:
-            index_tanimoto = 0.9  # required for alg 2 and 3
-            res = make_iteration(conn=conn, iteration=iteration, protein_pdbqt=args.protein,
-                                 protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
-                                 mw=args.mol_weight, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
-                                 ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
-                                 make_selection=make_selection,
-                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq,
-                                 min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, protonation=not args.no_protonation)
-            make_docking = True
-            make_selection = True
+        try:
+            while True:
+                index_tanimoto = 0.9  # required for alg 2 and 3
+                res = make_iteration(conn=conn, iteration=iteration, protein_pdbqt=args.protein,
+                                     protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
+                                     mw=args.mw, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
+                                     ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
+                                     make_selection=make_selection,
+                                     db_name=args.db, radius=args.radius, min_freq=args.min_freq,
+                                     min_atoms=args.min_atoms, max_atoms=args.max_atoms,
+                                     max_replacements=args.max_replacements, protonation=not args.no_protonation)
+                make_docking = True
+                make_selection = True
 
-            if res:
-                iteration += 1
-                if args.algorithm in [2, 3]:
-                    index_tanimoto -= 0.05
-            else:
-                if iteration == 1:
-                    # 0 succesfull iteration for finally printing
-                    iteration = 0
-                break
+                if res:
+                    iteration += 1
+                    if args.algorithm in [2, 3]:
+                        index_tanimoto -= 0.05
+                else:
+                    if iteration == 1:
+                        # 0 succesfull iteration for finally printing
+                        iteration = 0
+                    break
+        finally:
+            conn.close()
     finally:
         if args.tmpdir is None:
             shutil.rmtree(tmpdir, ignore_errors=True)
