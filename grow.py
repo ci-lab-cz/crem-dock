@@ -726,6 +726,20 @@ def get_canon_for_atom_idx(mol, idx):
     return sorted(canon_ranks[idx].tolist())
 
 
+def get_isomers(mol):
+    opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
+    # this is a workaround for rdkit issue - if a double bond has STEREOANY it will cause errors at
+    # stereoisomer enumeration, we replace STEREOANY with STEREONONE in these cases
+    try:
+        isomers = tuple(EnumerateStereoisomers(mol, options=opts))
+    except RuntimeError:
+        for bond in mol[1].GetBonds():
+            if bond.GetStereo() == Chem.BondStereo.STEREOANY:
+                bond.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
+        isomers = tuple(EnumerateStereoisomers(mol, options=opts))
+    return isomers
+
+
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, make_docking=True, make_selection=True, **kwargs):
     if protonation:
@@ -770,22 +784,13 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
 
     if res:
         data = []
-        opts = StereoEnumerationOptions(tryEmbedding=True, maxIsomers=32)
         nmols = -1
 
         for parent_mol, child_mols in res.items():
             parent_mol = Chem.AddHs(parent_mol)
             for mol in child_mols:
                 nmols += 1
-                # this is a workaround for rdkit issue - if a double bond has STEREOANY it will cause errors at
-                # stereoisomer enumeration, we replace STEREOANY with STEREONONE in these cases
-                try:
-                    isomers = tuple(EnumerateStereoisomers(mol, options=opts))
-                except RuntimeError:
-                    for bond in mol[1].GetBonds():
-                        if bond.GetStereo() == Chem.BondStereo.STEREOANY:
-                            bond.SetStereo(Chem.rdchem.BondStereo.STEREONONE)
-                    isomers = tuple(EnumerateStereoisomers(mol, options=opts))
+                isomers = get_isomers(mol)
                 for i, m in enumerate(isomers):
                     m = Chem.AddHs(m)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
