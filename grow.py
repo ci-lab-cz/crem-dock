@@ -215,6 +215,7 @@ def get_mols(conn, mol_ids):
     mols = []
     for items in cur.execute(sql, mol_ids):
         m = Chem.MolFromMolBlock(items[0], removeHs=False)
+        Chem.AssignAtomChiralTagsFromStructure(m)
         if not m:
             continue
         if items[1] is not None:
