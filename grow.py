@@ -830,8 +830,8 @@ def main():
                         help='SQLite DB with fragment replacements.')
     parser.add_argument('-r', '--radius', default=1, type=int,
                         help='context radius for replacement.')
-    parser.add_argument('-m', '--min_freq', default=0, type=int,
-                        help='the frequency of occurrence of the fragment in the source database. Default: 0.')
+    parser.add_argument('--min_freq', default=0, type=int,
+                        help='the frequency of occurrence of the fragment in the source database.')
     parser.add_argument('--max_replacements', type=int, required=False, default=None,
                         help='the maximum number of randomly chosen replacements. Default: None (all replacements).')
     parser.add_argument('--min_atoms', default=1, type=int,
@@ -848,21 +848,21 @@ def main():
     parser.add_argument('-t', '--algorithm', default=1, type=int,
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering, '
                              '3 - clustering, 4 - Pareto front.')
-    parser.add_argument('-mw', '--mol_weight', default=500, type=int,
-                        help='maximum ligand weight')
-    parser.add_argument('-nt', '--ntop', type=int, required=False,
-                        help='the number of the best molecules')
-    parser.add_argument('-rm', '--rmsd', type=float, required=True,
-                        help='ligand movement')
-    parser.add_argument('-b', '--rotatable_bonds', type=int, required=True,
-                        help='the number of rotatable bonds in ligand')
+    parser.add_argument('--mw', default=500, type=int,
+                        help='maximum ligand weight to pass on the next iteration.')
+    parser.add_argument('--ntop', type=int, default=20, required=False,
+                        help='the number of the best molecules to select for the next iteration.')
+    parser.add_argument('--rmsd', type=float, default=2, required=False,
+                        help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
+    parser.add_argument('--rotatable_bonds', type=int, default=5, required=False,
+                        help='maximum allowed number of rotatable bonds in a compound to pass on the next iteration.')
     parser.add_argument('--tmpdir', metavar='DIRNAME', default=None,
-                        help='directory where temporary files will be stored. If omitted atmp dir will be created in '
+                        help='directory where temporary files will be stored. If omitted tmp dir will be created in '
                              'the same location as output DB.')
     # parser.add_argument('--debug', action='store_true', default=False,
     #                     help='enable debug mode; all tmp files will not be erased.')
-    parser.add_argument('-n', '--ncpu', default=1, type=cpu_type,
-                        help='number of cpus. Default: 1.')
+    parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
+                        help='number of cpus.')
 
     args = parser.parse_args()
 
