@@ -9,7 +9,9 @@ from scripts import mk_prepare_ligand_string
 
 
 def ligand_preparation(smi):
+
     def convert2mol(m):
+
         def gen_conf(mol, useRandomCoords, randomSeed):
             params = AllChem.ETKDGv3()
             params.useRandomCoords = useRandomCoords
@@ -58,6 +60,12 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     return v.energies(n_poses=1)[0][0], v.poses(n_poses=1)
 
 
+def process_mol_docking(smi, mol_id, receptor_pdbqt_fname, center, box_size, ncpu):
+    ligand_pdbqt = ligand_preparation(smi)
+    score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
+    return mol_id, score, pdbqt_out
+
+
 def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
     '''
 
@@ -89,12 +97,11 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
     else:
         smiles_dict = cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'")
 
-    mol_ids, smiles = zip(*smiles_dict)
     center, box_size = get_param_from_config(protein_setup)
 
     pool = Pool(ncpu)
-    ligands_pdbqt_string = pool.map(ligand_preparation, smiles)
-    dock_result = pool.map(partial(docking, receptor_pdbqt_fname=receptor_pdbqt_fname, center=center,
-                                   box_size=box_size, ncpu=ncpu), iterable=ligands_pdbqt_string)
+    res = pool.starmap(partial(process_mol_docking, receptor_pdbqt_fname=receptor_pdbqt_fname, center=center,
+                               box_size=box_size, ncpu=ncpu),
+                       smiles_dict.values())
 
-    return {i: k for i, k in zip(mol_ids, dock_result)}
+    return {i: (score, pdbqt) for i, score, pdbqt in res}
