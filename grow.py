@@ -111,63 +111,42 @@ def add_protonation(conn, iteration):
     conn.commit()
 
 
-def update_db(conn, dock_dict, protonation):
+def update_db(conn, iteration):
     """
-    Insert score, rmsd, pdb and mol blocks of the docked molecules to the db
+    Post-process all docked molecules from an individual iteration.
+    Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
     :param conn: connection to docking DB
-    :param dock_dict: dict(mol_id_string:(energy_float, pdb_string_block),..)
-    :param protonation: True or False - to use chemaxon protonated smiles
+    :param iteration: current iteration
     :return:
     """
     cur = conn.cursor()
-    mol_ids = list(dock_dict.keys())
 
+    mol_ids = get_docked_mol_ids(conn, iteration)
+    mols = get_mols(conn, mol_ids)
     # parent_ids and parent_mols can be empty if all compounds do not have parents
-    parent_ids = dict(cur.execute(f'SELECT id, parent_id '
-                                  f'FROM mols '
-                                  f'WHERE id IN ({",".join("?" * len(mol_ids))}) AND '
-                                  f'parent_id iS NOT NULL', mol_ids))
+    parent_ids = dict(cur.execute(f"SELECT id, parent_id "
+                                  f"FROM mols "
+                                  f"WHERE id IN ({','.join('?' * len(mol_ids))}) AND "
+                                  f"parent_id iS NOT NULL", mol_ids))
     uniq_parent_ids = list(set(parent_ids.values()))
-    parent_mols = dict()
-    if uniq_parent_ids:
-        for i, block in cur.execute(f'SELECT id, mol_block FROM mols WHERE id IN ({",".join("?" * len(uniq_parent_ids))})', uniq_parent_ids):
-            parent_mols[i] = Chem.MolFromMolBlock(block)
+    parent_mols = get_mols(conn, uniq_parent_ids)
+    parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
-    for mol_id, (score, pdbqt_block) in dock_dict.items():
-        if protonation:
-            smi = list(cur.execute(f"SELECT smi_protonated FROM mols WHERE id = '{mol_id}'"))[0][0]
-        else:
-            smi = list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0]
-        mol_block = None
+    for mol in mols:
         rms = None
-        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False)
-        if mol:
-            try:
-                template_mol = Chem.MolFromSmiles(smi)
-                # explicit hydrogends are removed from carbon atoms (chiral hydrogens) to match pdbqt mol,
-                # e.g. [NH3+][C@H](C)C(=O)[O-]
-                template_mol = Chem.AddHs(template_mol, explicitOnly=True,
-                                          onlyOnAtoms=[a.GetIdx() for a in template_mol.GetAtoms() if a.GetAtomicNum() != 6])
-                mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
-                mol.SetProp('_Name', mol_id)
-                mol_block = Chem.MolToMolBlock(mol)
-                parent_mol = parent_mols[parent_ids[mol_id]]  # it is important to be after mol_block, as it can cause error if parent mol is missing (on the first iteration)
-                rms = get_rmsd(mol, parent_mol)
-            except KeyError:  # missing parent mol
-                pass
-            except:
-                sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
-        else:
-            sys.stderr.write(f'Could not read PDB: {mol_id}\n')
+        mol_id = mol.GetProp('_Name')
+        try:
+            parent_mol = parent_mols[parent_ids[mol_id]]
+            rms = get_rmsd(mol, parent_mol)
+        except KeyError:  # missing parent mol
+            pass
 
         cur.execute("""UPDATE mols
-                           SET pdb_block = ?,
-                               mol_block = ?,
-                               docking_score = ?,
+                           SET 
                                rmsd = ? 
                            WHERE
                                id = ?
-                        """, (pdbqt_block, mol_block, score, rms, mol_id))
+                        """, (rms, mol_id))
     conn.commit()
 
 
@@ -205,7 +184,7 @@ def get_docked_mol_ids(conn, iteration):
 
 def get_mols(conn, mol_ids):
     """
-    Returns list of Mol objects from docking DB, order is arbitrary
+    Returns list of Mol objects from docking DB, order is arbitrary, molecules with errors will be silently skipped
     :param conn: connection to docking DB
     :param mol_ids: list of molecules to retrieve
     :return:
@@ -477,6 +456,7 @@ def create_db(fname):
         os.makedirs(os.path.dirname(fname), exist_ok=True)
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
+    cur.execute("PRAGMA journal_mode=WAL")
     cur.execute("DROP TABLE IF EXISTS mols")
     cur.execute("""CREATE TABLE IF NOT EXISTS mols
             (
@@ -743,17 +723,18 @@ def get_isomers(mol):
 
 def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, make_docking=True, make_selection=True, **kwargs):
+    print(iteration)
     if protonation:
         add_protonation(conn, iteration)
     if make_docking:
-        dock_result = Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                                           protonation=protonation, iteration=iteration, ncpu=ncpu)
-        update_db(conn, dock_result, protonation)
-        mol_ids = list(dock_result.keys())
-    else:
-        mol_ids = get_docked_mol_ids(conn, iteration)
+        Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+                             protonation=protonation, iteration=iteration, ncpu=ncpu)
+        update_db(conn, iteration)
 
+    mol_ids = get_docked_mol_ids(conn, iteration)
+    print(mol_ids)
     mols = get_mols(conn, mol_ids)
+    print(mols)
 
     res = []
 

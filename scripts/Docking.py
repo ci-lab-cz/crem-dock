@@ -1,3 +1,4 @@
+import sys
 from functools import partial
 from multiprocessing import Pool
 
@@ -60,22 +61,43 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     return v.energies(n_poses=1)[0][0], v.poses(n_poses=1)
 
 
-def process_mol_docking(smi, mol_id, receptor_pdbqt_fname, center, box_size, ncpu):
+def pdbqt2molblock(pdbqt_block, smi, mol_id):
+    mol_block = None
+    mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False)
+    if mol:
+        try:
+            template_mol = Chem.MolFromSmiles(smi)
+            # explicit hydrogends are removed from carbon atoms (chiral hydrogens) to match pdbqt mol,
+            # e.g. [NH3+][C@H](C)C(=O)[O-]
+            template_mol = Chem.AddHs(template_mol, explicitOnly=True,
+                                      onlyOnAtoms=[a.GetIdx() for a in template_mol.GetAtoms() if
+                                                   a.GetAtomicNum() != 6])
+            mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
+            mol.SetProp('_Name', mol_id)
+            mol_block = Chem.MolToMolBlock(mol)
+        except Exception:
+            sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
+    return mol_block
+
+
+def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, ncpu):
     ligand_pdbqt = ligand_preparation(smi)
     score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
-    return mol_id, score, pdbqt_out
+    mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
+    return mol_id, score, pdbqt_out, mol_block
 
 
 def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
     '''
-
+    This function should update output db with docked poses and scores. Docked poses should be stored as pdbqt (source)
+    and mol block. All other post-processing will be performed separately.
     :param conn:
     :param receptor_pdbqt_fname:
     :param protein_setup:
     :param protonation: True or False
     :param iteration: int
     :param ncpu: int
-    :return: dict(mol_id:(energy_float, pdbqt_string_block),...)
+    :return:
     '''
 
     def get_param_from_config(config_fname):
@@ -86,22 +108,29 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
                     continue
                 param_name, value = line.replace(' ', '').split('=')
                 config[param_name] = float(value)
-
         center, box_size = (config['center_x'], config['center_y'], config['center_z']),\
                            (config['size_x'], config['size_y'], config['size_z'])
         return center, box_size
 
     cur = conn.cursor()
-    if protonation:
-        smiles_dict = cur.execute(f"SELECT id, smi_protonated FROM mols WHERE iteration = '{iteration - 1}'")
-    else:
-        smiles_dict = cur.execute(f"SELECT id, smi FROM mols WHERE iteration = '{iteration - 1}'")
+    smi_field_name = 'smi_protonated' if protonation else 'smi'
+    smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} FROM mols WHERE iteration = '{iteration - 1}'"))
 
     center, box_size = get_param_from_config(protein_setup)
 
     pool = Pool(ncpu)
-    res = pool.starmap(partial(process_mol_docking, receptor_pdbqt_fname=receptor_pdbqt_fname, center=center,
-                               box_size=box_size, ncpu=ncpu),
-                       smiles_dict.values())
-
-    return {i: (score, pdbqt) for i, score, pdbqt in res}
+    for i, (mol_id, score, pdbqt_block, mol_block) in enumerate(pool.starmap(partial(process_mol_docking,
+                                                                                     receptor_pdbqt_fname=receptor_pdbqt_fname,
+                                                                                     center=center, box_size=box_size,
+                                                                                     ncpu=ncpu),
+                                                                             smiles_dict.items()), 1):
+        conn.execute("""UPDATE mols
+                           SET pdb_block = ?,
+                               docking_score = ?,
+                               mol_block = ?
+                           WHERE
+                               id = ?
+                        """, (pdbqt_block, score, mol_block, mol_id))
+        if i % 100 == 0:
+            conn.commit()
+    conn.commit()
