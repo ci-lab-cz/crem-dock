@@ -9,7 +9,6 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from itertools import combinations
 from multiprocessing import cpu_count
 
 import matplotlib.pyplot as plt
@@ -670,13 +669,14 @@ def get_isomers(mol):
     return isomers
 
 
-def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
+def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, make_docking=True, make_selection=True, **kwargs):
-    print(iteration)
+    sys.stderr.write(f'iteration {iteration} started\n')
+    conn = sqlite3.connect(dbname)
     if protonation:
         add_protonation(conn, iteration)
     if make_docking:
-        Docking.iter_docking(conn, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+        Docking.iter_docking(dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, iteration=iteration, ncpu=ncpu)
         update_db(conn, iteration)
 
@@ -735,7 +735,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
         return True
 
     else:
-        print('Growth has stopped')
+        sys.stderr.write('Growth has stopped\n')
         return False
 
 
@@ -821,37 +821,33 @@ def main():
         with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
             json.dump(vars(args), f, sort_keys=True, indent=2)
 
-        conn = sqlite3.connect(args.output)
+        while True:
+            index_tanimoto = 0.9  # required for alg 2 and 3
+            res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
+                                 protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
+                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
+                                 ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
+                                 make_selection=make_selection,
+                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq,
+                                 min_atoms=args.min_atoms, max_atoms=args.max_atoms,
+                                 max_replacements=args.max_replacements, protonation=not args.no_protonation)
+            make_docking = True
+            make_selection = True
 
-        try:
-            while True:
-                index_tanimoto = 0.9  # required for alg 2 and 3
-                res = make_iteration(conn=conn, iteration=iteration, protein_pdbqt=args.protein,
-                                     protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
-                                     mw=args.mw, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
-                                     ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
-                                     make_selection=make_selection,
-                                     db_name=args.db, radius=args.radius, min_freq=args.min_freq,
-                                     min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                     max_replacements=args.max_replacements, protonation=not args.no_protonation)
-                make_docking = True
-                make_selection = True
+            if res:
+                iteration += 1
+                if args.algorithm in [2, 3]:
+                    index_tanimoto -= 0.05
+            else:
+                if iteration == 1:
+                    # 0 succesfull iteration for finally printing
+                    iteration = 0
+                break
 
-                if res:
-                    iteration += 1
-                    if args.algorithm in [2, 3]:
-                        index_tanimoto -= 0.05
-                else:
-                    if iteration == 1:
-                        # 0 succesfull iteration for finally printing
-                        iteration = 0
-                    break
-        finally:
-            conn.close()
     finally:
         if args.tmpdir is None:
             shutil.rmtree(tmpdir, ignore_errors=True)
-        print(f'{iteration} iterations were completed successfully')
+        sys.stderr.write(f'{iteration} iterations were completed successfully\n')
 
 
 if __name__ == '__main__':

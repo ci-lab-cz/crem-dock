@@ -1,3 +1,4 @@
+import sqlite3
 import sys
 from functools import partial
 from multiprocessing import Pool
@@ -80,14 +81,22 @@ def pdbqt2molblock(pdbqt_block, smi, mol_id):
     return mol_block
 
 
-def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, ncpu):
+def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbname, ncpu):
     ligand_pdbqt = ligand_preparation(smi)
     score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
     mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
-    return mol_id, score, pdbqt_out, mol_block
+    with sqlite3.connect(dbname) as conn:
+        conn.execute("""UPDATE mols
+                           SET pdb_block = ?,
+                               docking_score = ?,
+                               mol_block = ?
+                           WHERE
+                               id = ?
+                        """, (pdbqt_out, score, mol_block, mol_id))
+    return mol_id
 
 
-def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
+def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
     '''
     This function should update output db with docked poses and scores. Docked poses should be stored as pdbqt (source)
     and mol block. All other post-processing will be performed separately.
@@ -112,25 +121,19 @@ def iter_docking(conn, receptor_pdbqt_fname, protein_setup, protonation, iterati
                            (config['size_x'], config['size_y'], config['size_z'])
         return center, box_size
 
-    cur = conn.cursor()
-    smi_field_name = 'smi_protonated' if protonation else 'smi'
-    smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} FROM mols WHERE iteration = '{iteration - 1}'"))
+    with sqlite3.connect(dbname) as conn:
+        cur = conn.cursor()
+        smi_field_name = 'smi_protonated' if protonation else 'smi'
+        smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} FROM mols WHERE iteration = '{iteration - 1}'"))
 
     center, box_size = get_param_from_config(protein_setup)
 
     pool = Pool(ncpu)
-    for i, (mol_id, score, pdbqt_block, mol_block) in enumerate(pool.starmap(partial(process_mol_docking,
-                                                                                     receptor_pdbqt_fname=receptor_pdbqt_fname,
-                                                                                     center=center, box_size=box_size,
-                                                                                     ncpu=ncpu),
-                                                                             smiles_dict.items()), 1):
-        conn.execute("""UPDATE mols
-                           SET pdb_block = ?,
-                               docking_score = ?,
-                               mol_block = ?
-                           WHERE
-                               id = ?
-                        """, (pdbqt_block, score, mol_block, mol_id))
+    for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking, dbname=dbname,
+                                                    receptor_pdbqt_fname=receptor_pdbqt_fname,
+                                                    center=center, box_size=box_size,
+                                                    ncpu=ncpu),
+                                            smiles_dict.items()), 1):
         if i % 100 == 0:
-            conn.commit()
-    conn.commit()
+            sys.stderr.write(f'\r{i} molecules were docked')
+    sys.stderr.write(f'\r{i} molecules were docked\n')
