@@ -335,7 +335,7 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
     if mol.HasProp('protected_user_canon_ids'):
-        _protected_user_ids = set(get_atom_idxs_for_canon(mol, [int(i) for i in mol.GetProp('protected_user_canon_ids').split(',')]))
+        _protected_user_ids = set(get_atom_idxs_for_canon(mol, list(map(int, mol.GetProp('protected_user_canon_ids').split(',')))))
     _protected_alg_ids = set(get_protected_ids(mol, protein_xyz, h_dist_threshold))
     protected_ids = _protected_alg_ids | _protected_user_ids
 
@@ -723,7 +723,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
                     child_protected_canon_user_id = None
                     if parent_mol.HasProp('protected_user_canon_ids'):
-                        parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, map(int, parent_mol.GetProp('protected_user_canon_ids').split(',')))
+                        parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
                         child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
                         child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
