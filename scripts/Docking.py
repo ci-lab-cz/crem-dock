@@ -1,3 +1,4 @@
+import re
 import sqlite3
 import sys
 from functools import partial
@@ -43,6 +44,29 @@ def ligand_preparation(smi):
     return mol_conf_pdbqt
 
 
+def fix_pdbqt(pdbqt_block):
+    pdbqt_fixed = []
+    for line in pdbqt_block.split('\n'):
+        if not line.startswith('HETATM') and not line.startswith('ATOM'):
+            pdbqt_fixed.append(line)
+            continue
+        atom_type = line[12:16].strip()
+        # autodock vina types
+        if 'CA' in line[77:79]: #Calcium is exception
+            atom_pdbqt_type = 'CA'
+        else:
+            atom_pdbqt_type = re.sub('D|A', '', line[77:79]).strip() # can add meeko macrocycle types (G and \d (CG0 etc) in the sub expression if will be going to use it
+
+        if re.search('\d', atom_type[0]) or len(atom_pdbqt_type) == 2: #1HG or two-letter atom names such as CL,FE starts with 13
+            atom_format_type = '{:<4s}'.format(atom_type)
+        else: # starts with 14
+            atom_format_type = ' {:<3s}'.format(atom_type)
+        line = line[:12] + atom_format_type + line[16:]
+        pdbqt_fixed.append(line)
+
+    return '\n'.join(pdbqt_fixed)
+
+
 def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     '''
     :param ligands_pdbqt_string: str or list of strings
@@ -63,8 +87,14 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
 
 
 def pdbqt2molblock(pdbqt_block, smi, mol_id):
+    def _pdbqt2mol(pdbqt_block):
+        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False, sanitize=True)
+        if mol is None:
+            return Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False, sanitize=False)
+        return mol
+
     mol_block = None
-    mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False)
+    mol = _pdbqt2mol(pdbqt_block)
     if mol:
         try:
             template_mol = Chem.MolFromSmiles(smi)
@@ -85,6 +115,12 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
     ligand_pdbqt = ligand_preparation(smi)
     score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
     mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
+    if mol_block is None:
+        pdbqt_out = fix_pdbqt(pdbqt_out)
+        mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
+        if mol_block:
+            sys.stderr.write('PDBQT was fixed\n')
+
     with sqlite3.connect(dbname) as conn:
         conn.execute("""UPDATE mols
                            SET pdb_block = ?,
