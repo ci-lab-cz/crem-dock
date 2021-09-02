@@ -58,32 +58,6 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def set_common_atoms(mol_name, child_mol, parent_mol, conn):
-    '''
-
-    :param mol_name:
-    :param child_mol:
-    :param parent_mol:
-    :param conn:
-    :return:
-    '''
-    cur = conn.cursor()
-
-    ids = child_mol.GetSubstructMatch(parent_mol)
-    atoms = []
-    for i, j in combinations(ids, 2):
-        bond = child_mol.GetBondBetweenAtoms(i, j)
-        if bond is not None:
-            atoms.append(f'{i}_{j}')
-    atoms = '_'.join(atoms)
-    cur.execute("""UPDATE mols
-                       SET atoms = ?
-                       WHERE
-                           id = ?
-                    """, (atoms, mol_name))
-    conn.commit()
-
-
 def add_protonation(conn, iteration):
     '''
     Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
@@ -133,6 +107,8 @@ def update_db(conn, iteration):
     parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
     for mol in mols:
+        mw = MolWt(mol)
+        rtb = CalcNumRotatableBonds(mol)
         rms = None
         mol_id = mol.GetProp('_Name')
         try:
@@ -143,10 +119,12 @@ def update_db(conn, iteration):
 
         cur.execute("""UPDATE mols
                            SET 
-                               rmsd = ? 
+                               rmsd = ?,
+                               mw = ?,
+                               rtb = ? 
                            WHERE
                                id = ?
-                        """, (rms, mol_id))
+                        """, (rms, mw, rtb, mol_id))
     conn.commit()
 
 
@@ -182,6 +160,20 @@ def get_docked_mol_ids(conn, iteration):
     return [i[0] for i in res]
 
 
+def get_docked_mol_data(conn, iteration):
+    """
+    Returns mol_ids, MW, RTB and RMSD for molecules which where docked at the given iteration and conversion
+    to mol block was successful
+    :param conn:
+    :param iteration:
+    :return: DataFrame with columns MW, RTB and RMSD and mol_id as index
+    """
+    cur = conn.cursor()
+    res = tuple(cur.execute(f"SELECT id, mw, rtb, rmsd FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL"))
+    df = pd.DataFrame(res, columns=['id', 'mw', 'rtb', 'rmsd']).set_index('id')
+    return df
+
+
 def get_mols(conn, mol_ids):
     """
     Returns list of Mol objects from docking DB, order is arbitrary, molecules with errors will be silently skipped
@@ -214,50 +206,6 @@ def get_mol_scores(conn, mol_ids):
     cur = conn.cursor()
     sql = f'SELECT id, docking_score FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
     return dict(cur.execute(sql, mol_ids))
-
-
-def get_mol_rms(conn, mol_ids):
-    """
-    Return dict of mol_id: rmsd
-    :param conn: connection to docking DB
-    :param mol_ids: list of mol ids
-    :return:
-    """
-    cur = conn.cursor()
-    sql = f'SELECT id, rmsd FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-    return dict(cur.execute(sql, mol_ids))
-
-
-def filter_mols(mols, mw=None, rtb=None):
-    """
-    Returns list of molecules satisfying given conditions
-    :param mols: list of molecules
-    :param mw: maximum MW (optional)
-    :param rtb: maximum number of rotatable bonds (optional)
-    :return: list of molecules
-    """
-    output = []
-    for mol in mols:
-        if (mw is None or MolWt(mol) <= mw) and (rtb is None or CalcNumRotatableBonds(mol) <= rtb):
-            output.append(mol)
-    return output
-
-
-def filter_mols_by_rms(mols, conn, rms):
-    """
-    Remove molecules with rmsd greater than the threshold
-    :param mols: list of molecules
-    :param conn: connection to docking DB
-    :param rms: rmsd threshold
-    :return: list of molecules
-    """
-    output = []
-    mol_ids = get_mol_ids(mols)
-    rmsd = get_mol_rms(conn, mol_ids)
-    for mol in mols:
-        if rmsd[mol.GetProp('_Name')] <= rms:
-            output.append(mol)
-    return output
 
 
 def select_top_mols(mols, conn, ntop):
@@ -446,7 +394,7 @@ def __grow_mols(conn, mols, protein_pdbqt, protonation, h_dist_threshold=2, ncpu
 
 def insert_db(conn, data):
     cur = conn.cursor()
-    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
+    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
     conn.commit()
 
 
@@ -466,7 +414,8 @@ def create_db(fname):
              smi_protonated TEXT,
              parent_id TEXT,
              docking_score REAL,
-             atoms TEXT,
+             mw REAL,
+             rtb INTEGER,
              rmsd REAL,
              pdb_block TEXT,
              mol_block TEXT,
@@ -493,7 +442,7 @@ def insert_starting_structures_to_db(fname, db_fname):
                     tmp = line.strip().split()
                     smi = tmp[0]
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    data.append((name, 0, smi, None, None, None, None, None, None, None, None))
+                    data.append((name, 0, smi, None, None, None, None, None, None, None, None, None))
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -509,8 +458,8 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
 
-                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None, None, None, None,
-                                 Chem.MolToMolBlock(mol), protected_user_canon_ids))
+                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None,
+                                 None, None, None, None, None, Chem.MolToMolBlock(mol), protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -731,22 +680,17 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                              protonation=protonation, iteration=iteration, ncpu=ncpu)
         update_db(conn, iteration)
 
-    mol_ids = get_docked_mol_ids(conn, iteration)
-    print(mol_ids)
-    mols = get_mols(conn, mol_ids)
-    print(mols)
-
     res = []
 
     if make_selection:
-        mols = filter_mols(mols, mw, rtb)
-        if not mols:
-            print(f'iteration{iteration}: no molecule was selected by MW and RTB')
+        mol_data = get_docked_mol_data(conn, iteration)
+        mol_data = mol_data.loc[(mol_data['mw'] <= mw) & (mol_data['rtb'] <= rtb)]  # filter by MW and RTB
         if iteration != 1:
-            mols = filter_mols_by_rms(mols, conn, rmsd)
-            if not mols:
-                print(f'iteration{iteration}: no molecule was selected by rmsd')
-        if mols:
+            mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
+        if len(mol_data.index) == 0:
+            sys.stderr.write(f'iteration {iteration}: no molecules were selected for growing.\n')
+        else:
+            mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, protonation=protonation,
                                             ntop=ntop, ncpu=ncpu, **kwargs)
@@ -762,6 +706,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                                           **kwargs)
 
     else:
+        mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
         res = __grow_mols(conn, mols=mols, protein_pdbqt=protein_pdbqt, protonation=protonation, ncpu=ncpu, **kwargs)
 
     if res:
@@ -783,7 +728,7 @@ def make_iteration(conn, iteration, protein_pdbqt, protein_setup, ntop, tanimoto
                         child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
                     data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                                 parent_mol.GetProp('_Name'), None, None, None, None, None,
+                                 parent_mol.GetProp('_Name'), None, None, None, None, None, None,
                                  child_protected_canon_user_id))
 
         insert_db(conn, data)
