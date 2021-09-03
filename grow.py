@@ -702,8 +702,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
                                            protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
-                                          protonation=protonation, ncpu=ncpu, tmpdir=tmpdir, iteration=iteration,
-                                          **kwargs)
+                                          protonation=protonation, ncpu=ncpu, tmpdir=tmpdir, **kwargs)
 
     else:
         mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
