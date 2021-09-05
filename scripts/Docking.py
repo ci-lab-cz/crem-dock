@@ -87,14 +87,8 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
 
 
 def pdbqt2molblock(pdbqt_block, smi, mol_id):
-    def _pdbqt2mol(pdbqt_block):
-        mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False, sanitize=True)
-        if mol is None:
-            return Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False, sanitize=False)
-        return mol
-
     mol_block = None
-    mol = _pdbqt2mol(pdbqt_block)
+    mol = Chem.MolFromPDBBlock('\n'.join([i[:66] for i in pdbqt_block.split('MODEL')[1].split('\n')]), removeHs=False, sanitize=False)
     if mol:
         try:
             template_mol = Chem.MolFromSmiles(smi)
@@ -106,6 +100,8 @@ def pdbqt2molblock(pdbqt_block, smi, mol_id):
             mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
             mol.SetProp('_Name', mol_id)
             mol_block = Chem.MolToMolBlock(mol)
+            Chem.SanitizeMol(mol)
+            Chem.AssignStereochemistry(mol, cleanIt=True, force=True, flagPossibleStereoCenters=True)
         except Exception:
             sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
     return mol_block
