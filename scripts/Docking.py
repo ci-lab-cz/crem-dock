@@ -98,10 +98,10 @@ def pdbqt2molblock(pdbqt_block, smi, mol_id):
                                       onlyOnAtoms=[a.GetIdx() for a in template_mol.GetAtoms() if
                                                    a.GetAtomicNum() != 6])
             mol = AllChem.AssignBondOrdersFromTemplate(template_mol, mol)
-            mol.SetProp('_Name', mol_id)
-            mol_block = Chem.MolToMolBlock(mol)
             Chem.SanitizeMol(mol)
             Chem.AssignStereochemistry(mol, cleanIt=True, force=True, flagPossibleStereoCenters=True)
+            mol.SetProp('_Name', mol_id)
+            mol_block = Chem.MolToMolBlock(mol)
         except Exception:
             sys.stderr.write(f'Could not assign bond orders while parsing PDB: {mol_id}\n')
     return mol_block
