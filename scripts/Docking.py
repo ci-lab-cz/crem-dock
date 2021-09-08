@@ -4,6 +4,8 @@ import sys
 from functools import partial
 from multiprocessing import Pool
 
+from dask import bag
+
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from vina import Vina
@@ -128,16 +130,22 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
     return mol_id
 
 
-def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu):
+def test(s):
+    return s + 'aaaa'
+
+
+def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu, use_dask):
     '''
     This function should update output db with docked poses and scores. Docked poses should be stored as pdbqt (source)
     and mol block. All other post-processing will be performed separately.
-    :param conn:
+    :param dbname:
     :param receptor_pdbqt_fname:
     :param protein_setup:
     :param protonation: True or False
     :param iteration: int
     :param ncpu: int
+    :param use_dask: indicate whether or not using dask cluster
+    :type use_dask: bool
     :return:
     '''
 
@@ -160,13 +168,28 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
 
     center, box_size = get_param_from_config(protein_setup)
 
-    pool = Pool(ncpu)
-    i = 0
-    for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking, dbname=dbname,
-                                                    receptor_pdbqt_fname=receptor_pdbqt_fname,
-                                                    center=center, box_size=box_size,
-                                                    ncpu=ncpu),
-                                            smiles_dict.items()), 1):
-        if i % 100 == 0:
-            sys.stderr.write(f'\r{i} molecules were docked')
-    sys.stderr.write(f'\r{i} molecules were docked\n')
+    if use_dask:
+        i = 0
+        # b = bag.from_sequence(['asdas', 'asfsdf', 'tgrfd', 'rtyhgfdert'], npartitions=2)
+        # for res in b.map(test).compute():
+        #     print(res)
+        b = bag.from_sequence(smiles_dict.values(), npartitions=2)
+        for i, mol_id in enumerate(b.starmap(process_mol_docking,
+                                             dbname=dbname, receptor_pdbqt_fname=receptor_pdbqt_fname,
+                                             center=center, box_size=box_size, ncpu=ncpu).compute(),
+                                   1):
+            if i % 100 == 0:
+                sys.stderr.write(f'\r{i} molecules were docked')
+        sys.stderr.write(f'\r{i} molecules were docked\n')
+
+    else:
+        pool = Pool(ncpu)
+        i = 0
+        for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking, dbname=dbname,
+                                                        receptor_pdbqt_fname=receptor_pdbqt_fname,
+                                                        center=center, box_size=box_size,
+                                                        ncpu=ncpu),
+                                                smiles_dict.items()), 1):
+            if i % 100 == 0:
+                sys.stderr.write(f'\r{i} molecules were docked')
+        sys.stderr.write(f'\r{i} molecules were docked\n')

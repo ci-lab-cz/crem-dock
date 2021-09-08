@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from crem.crem import grow_mol
+from dask.distributed import Client
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdFMCS
@@ -670,14 +671,14 @@ def get_isomers(mol):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, protonation, make_docking=True, make_selection=True, **kwargs):
+                   ncpu, tmpdir, protonation, make_docking=True, make_selection=True, use_dask=False, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
     if protonation:
         add_protonation(conn, iteration)
     if make_docking:
         Docking.iter_docking(dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, iteration=iteration, ncpu=ncpu)
+                             protonation=protonation, iteration=iteration, use_dask=use_dask, ncpu=ncpu)
         update_db(conn, iteration)
 
     res = []
@@ -786,10 +787,18 @@ def main():
                              'the same location as output DB.')
     # parser.add_argument('--debug', action='store_true', default=False,
     #                     help='enable debug mode; all tmp files will not be erased.')
+    parser.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
+                        help='text file with addresses of nodes of dask SSH cluster. The most typical, it can be '
+                             'passed as $PBS_NODEFILE variable from inside a PBS script. The first line in this file '
+                             'will be the address of the scheduler running on the standard port 8786. If omitted, '
+                             'calculations will run on a single machine as usual.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
 
     args = parser.parse_args()
+
+    if args.hostfile is not None:
+        dask_client = Client(open(args.hostfile).readline().strip() + ':8786')
 
     if args.tmpdir is None:
         tmpdir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(args.output)),
@@ -829,7 +838,8 @@ def main():
                                  make_selection=make_selection,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, protonation=not args.no_protonation)
+                                 max_replacements=args.max_replacements, protonation=not args.no_protonation,
+                                 use_dask=args.hostfile is not None)
             make_docking = True
             make_selection = True
 
