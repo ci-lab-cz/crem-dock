@@ -720,6 +720,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
                 for i, m in enumerate(isomers):
                     m = Chem.AddHs(m)
                     mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
+                    # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
                     child_protected_canon_user_id = None
                     if parent_mol.HasProp('protected_user_canon_ids'):
                         parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
