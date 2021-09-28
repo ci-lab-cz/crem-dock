@@ -5,12 +5,37 @@ from functools import partial
 from multiprocessing import Pool
 
 from dask import bag
-
+from dask.distributed import Lock
+from meeko import MoleculePreparation
+from meeko import obutils
+from openbabel import openbabel as ob
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from vina import Vina
 
-from scripts import mk_prepare_ligand_string
+
+def mk_prepare_ligand_string(molecule_string, build_macrocycle=True, add_water=False, merge_hydrogen=True,
+                             add_hydrogen=False, pH_value=None, verbose=False, mol_format='SDF'):
+
+    mol = obutils.load_molecule_from_string(molecule_string, molecule_format=mol_format)
+
+    if pH_value is not None:
+        mol.CorrectForPH(float(pH_value))
+
+    if add_hydrogen:
+        mol.AddHydrogens()
+        charge_model = ob.OBChargeModel.FindType("Gasteiger")
+        charge_model.ComputeCharges(mol)
+
+    preparator = MoleculePreparation(merge_hydrogens=merge_hydrogen, macrocycle=build_macrocycle,
+                                     hydrate=add_water, amide_rigid=True)
+                                     #additional parametrs
+                                     #rigidify_bonds_smarts=[], rigidify_bonds_indices=[])
+    preparator.prepare(mol)
+    if verbose:
+        preparator.show_setup()
+
+    return preparator.write_pdbqt_string()
 
 
 def ligand_preparation(smi):
@@ -38,11 +63,12 @@ def ligand_preparation(smi):
 
     mol = Chem.MolFromSmiles(smi)
     mol_conf_sdf = convert2mol(mol)
-    mol_conf_pdbqt = mk_prepare_ligand_string.main(mol_conf_sdf,
-                                                   build_macrocycle=False, # can do it True, but there is some problem with >=7-chains mols
-                                                   add_water=False, merge_hydrogen=True, add_hydrogen=False,
-                                                   # pH_value=7.4, can use this opt but some results are different in comparison to chemaxon
-                                                   verbose=False, mol_format='SDF')
+    mol_conf_pdbqt = mk_prepare_ligand_string(mol_conf_sdf,
+                                              build_macrocycle=False,
+                                              # can do it True, but there is some problem with >=7-chains mols
+                                              add_water=False, merge_hydrogen=True, add_hydrogen=False,
+                                              # pH_value=7.4, can use this opt but some results are different in comparison to chemaxon
+                                              verbose=False, mol_format='SDF')
     return mol_conf_pdbqt
 
 
@@ -119,14 +145,15 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
         if mol_block:
             sys.stderr.write('PDBQT was fixed\n')
 
-    with sqlite3.connect(dbname) as conn:
-        conn.execute("""UPDATE mols
-                           SET pdb_block = ?,
-                               docking_score = ?,
-                               mol_block = ?
-                           WHERE
-                               id = ?
-                        """, (pdbqt_out, score, mol_block, mol_id))
+    with Lock(dbname):
+        with sqlite3.connect(dbname) as conn:
+            conn.execute("""UPDATE mols
+                               SET pdb_block = ?,
+                                   docking_score = ?,
+                                   mol_block = ?
+                               WHERE
+                                   id = ?
+                            """, (pdbqt_out, score, mol_block, mol_id))
     return mol_id
 
 
@@ -170,13 +197,10 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
 
     if use_dask:
         i = 0
-        # b = bag.from_sequence(['asdas', 'asfsdf', 'tgrfd', 'rtyhgfdert'], npartitions=2)
-        # for res in b.map(test).compute():
-        #     print(res)
-        b = bag.from_sequence(smiles_dict.values(), npartitions=2)
+        b = bag.from_sequence(smiles_dict.items(), npartitions=1000)
         for i, mol_id in enumerate(b.starmap(process_mol_docking,
-                                             dbname=dbname, receptor_pdbqt_fname=receptor_pdbqt_fname,
-                                             center=center, box_size=box_size, ncpu=ncpu).compute(),
+                                             receptor_pdbqt_fname=receptor_pdbqt_fname,
+                                             center=center, box_size=box_size, dbname=dbname, ncpu=ncpu).compute(),
                                    1):
             if i % 100 == 0:
                 sys.stderr.write(f'\r{i} molecules were docked')

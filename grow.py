@@ -16,6 +16,7 @@ import numpy as np
 import pandas as pd
 from crem.crem import grow_mol
 from dask.distributed import Client
+from dask import bag
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdFMCS
@@ -30,6 +31,13 @@ from scripts import Docking
 
 def cpu_type(x):
     return max(1, min(int(x), cpu_count()))
+
+
+def filepath_type(x):
+    if x:
+        return os.path.abspath(x)
+    else:
+        return x
 
 
 def sort_two_lists(primary, secondary):
@@ -404,7 +412,7 @@ def create_db(fname):
         os.makedirs(os.path.dirname(fname), exist_ok=True)
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL")
+    # cur.execute("PRAGMA journal_mode=WAL")
     cur.execute("DROP TABLE IF EXISTS mols")
     cur.execute("""CREATE TABLE IF NOT EXISTS mols
             (
@@ -672,12 +680,13 @@ def get_isomers(mol):
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, make_docking=True, make_selection=True, use_dask=False, **kwargs):
+
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
     if protonation:
         add_protonation(conn, iteration)
     if make_docking:
-        Docking.iter_docking(dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+        Docking.iter_docking(dbname=dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, iteration=iteration, use_dask=use_dask, ncpu=ncpu)
         update_db(conn, iteration)
 
@@ -742,17 +751,17 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
 def main():
     parser = argparse.ArgumentParser(description='Fragment growing within binding pocket with Autodock Vina.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-i', '--input_frags', metavar='FILENAME', required=False,
+    parser.add_argument('-i', '--input_frags', metavar='FILENAME', required=False, type=filepath_type,
                         help='SMILES file with input fragments or SDF file with 3D coordinates of pre-aligned input '
                              'fragments (e.g. from PDB complexes). '
                              'If SDF contain <protected_user_ids> field (comma-separated 1-based indices) '
                              'these atoms will be protected from growing. This argument can be omitted if an existed '
                              'output DB is specified, then docking will be continued from the last successful '
                              'iteration. Optional.')
-    parser.add_argument('-o', '--output', metavar='FILENAME', required=True,
+    parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
                         help='SQLite DB with docking results. If an existed DB was supplied input fragments will be '
                              'ignored if any and the program will continue docking from the last successful iteration.')
-    parser.add_argument('-d', '--db', metavar='fragments.db', required=True,
+    parser.add_argument('-d', '--db', metavar='fragments.db', required=True, type=filepath_type,
                         help='SQLite DB with fragment replacements.')
     parser.add_argument('-r', '--radius', default=1, type=int,
                         help='context radius for replacement.')
@@ -764,9 +773,9 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('-p', '--protein', metavar='protein.pdbqt', required=True,
+    parser.add_argument('-p', '--protein', metavar='protein.pdbqt', required=True, type=filepath_type,
                         help='input PDBQT file with a prepared protein.')
-    parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True,
+    parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True, type=filepath_type,
                         help='input text file with Vina docking setup.')
     parser.add_argument('--no_protonation', action='store_true', default=False,
                         help='disable protonation of molecules before docking. Protonation requires installed '
@@ -782,7 +791,7 @@ def main():
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--rotatable_bonds', type=int, default=5, required=False,
                         help='maximum allowed number of rotatable bonds in a compound to pass on the next iteration.')
-    parser.add_argument('--tmpdir', metavar='DIRNAME', default=None,
+    parser.add_argument('--tmpdir', metavar='DIRNAME', default=None, type=filepath_type,
                         help='directory where temporary files will be stored. If omitted tmp dir will be created in '
                              'the same location as output DB.')
     # parser.add_argument('--debug', action='store_true', default=False,
@@ -799,6 +808,15 @@ def main():
 
     if args.hostfile is not None:
         dask_client = Client(open(args.hostfile).readline().strip() + ':8786')
+        tmpdir = tempfile.mkdtemp()
+        try:
+            tmparchive = os.path.join(tmpdir, 'archive')
+            shutil.make_archive(tmparchive, 'zip',
+                                root_dir=os.path.dirname(os.path.abspath(__file__)),
+                                base_dir='scripts')
+            dask_client.upload_file(tmparchive + '.zip')
+        finally:
+            shutil.rmtree(tmpdir)
 
     if args.tmpdir is None:
         tmpdir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(args.output)),
