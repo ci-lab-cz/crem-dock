@@ -829,7 +829,7 @@ def main():
     # 3D SDF                             False          False
     # existed DB                          True           True
     try:
-        if os.path.exists(args.output):
+        if os.path.isfile(args.output):
             make_docking = True
             continuation = True
             iteration = get_last_iter_from_db(args.output)

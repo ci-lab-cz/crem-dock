@@ -2,10 +2,10 @@ import re
 import sqlite3
 import sys
 from functools import partial
-from multiprocessing import Pool
+from multiprocessing import Pool, Manager
 
 from dask import bag
-from dask.distributed import Lock
+from dask.distributed import Lock as daskLock
 from meeko import MoleculePreparation
 from meeko import obutils
 from openbabel import openbabel as ob
@@ -135,7 +135,18 @@ def pdbqt2molblock(pdbqt_block, smi, mol_id):
     return mol_block
 
 
-def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbname, ncpu):
+def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbname, ncpu, lock=None):
+
+    def insert_data(dbname, pdbqt_out, score, mol_block, mol_id):
+        with sqlite3.connect(dbname) as conn:
+            conn.execute("""UPDATE mols
+                               SET pdb_block = ?,
+                                   docking_score = ?,
+                                   mol_block = ?
+                               WHERE
+                                   id = ?
+                            """, (pdbqt_out, score, mol_block, mol_id))
+
     ligand_pdbqt = ligand_preparation(smi)
     score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
     mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
@@ -145,20 +156,14 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
         if mol_block:
             sys.stderr.write('PDBQT was fixed\n')
 
-    with Lock(dbname):
-        with sqlite3.connect(dbname) as conn:
-            conn.execute("""UPDATE mols
-                               SET pdb_block = ?,
-                                   docking_score = ?,
-                                   mol_block = ?
-                               WHERE
-                                   id = ?
-                            """, (pdbqt_out, score, mol_block, mol_id))
+    if lock is not None:  # multiprocessing
+        with lock:
+            insert_data(dbname, pdbqt_out, score, mol_block, mol_id)
+    else:  # dask
+        with daskLock(dbname):
+            insert_data(dbname, pdbqt_out, score, mol_block, mol_id)
+
     return mol_id
-
-
-def test(s):
-    return s + 'aaaa'
 
 
 def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu, use_dask):
@@ -212,11 +217,13 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
 
     else:
         pool = Pool(ncpu)
+        manager = Manager()
+        lock = manager.Lock()
         i = 0
         for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking, dbname=dbname,
                                                         receptor_pdbqt_fname=receptor_pdbqt_fname,
                                                         center=center, box_size=box_size,
-                                                        ncpu=ncpu),
+                                                        ncpu=ncpu, lock=lock),
                                                 smiles_dict.items()), 1):
             if i % 100 == 0:
                 sys.stderr.write(f'\r{i} molecules were docked')
