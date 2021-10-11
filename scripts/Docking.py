@@ -191,7 +191,11 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
     with sqlite3.connect(dbname) as conn:
         cur = conn.cursor()
         smi_field_name = 'smi_protonated' if protonation else 'smi'
-        smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} FROM mols WHERE iteration = '{iteration - 1}'"))
+        smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} "
+                                       f"FROM mols "
+                                       f"WHERE iteration = {iteration - 1} AND docking_score IS NULL"))
+    if not smiles_dict:
+        return
 
     center, box_size = get_param_from_config(protein_setup)
 

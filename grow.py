@@ -479,16 +479,14 @@ def insert_starting_structures_to_db(fname, db_fname):
 
 def get_last_iter_from_db(db_fname):
     """
-    Returns last successful iteration number (with non-NULL docking scores)
+    Returns last iteration number
     :param db_fname:
     :return: iteration number
     """
     with sqlite3.connect(db_fname) as conn:
         cur = conn.cursor()
-        res = list(cur.execute("SELECT iteration, MIN(docking_score) FROM mols GROUP BY iteration ORDER BY iteration"))
-        for iteration, score in reversed(res):
-            if score is not None:
-                return iteration + 1
+        res = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0]
+        return res + 1
 
 
 def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
@@ -679,20 +677,18 @@ def get_isomers(mol):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, protonation, make_docking=True, make_selection=True, use_dask=False, **kwargs):
+                   ncpu, tmpdir, protonation, continuation=True, make_docking=True, use_dask=False, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
-    if protonation:
+    if protonation and not continuation:
         add_protonation(conn, iteration)
     if make_docking:
         Docking.iter_docking(dbname=dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, iteration=iteration, use_dask=use_dask, ncpu=ncpu)
         update_db(conn, iteration)
 
-    res = []
-
-    if make_selection:
+        res = []
         mol_data = get_docked_mol_data(conn, iteration)
         mol_data = mol_data.loc[(mol_data['mw'] <= mw) & (mol_data['rtb'] <= rtb)]  # filter by MW and RTB
         if iteration != 1:
@@ -828,21 +824,21 @@ def main():
     iteration = 1
 
     # depending on input setup operations applied on the first iteration
-    # input      make_docking   make_selection
-    # SMILES             True             True
-    # 3D SDF            False            False
-    # existed DB        False             True
+    # input      make_docking & make_selection   continuation (to avoid protonation on the first step)
+    # SMILES                              True          False
+    # 3D SDF                             False          False
+    # existed DB                          True           True
     try:
         if os.path.exists(args.output):
-            make_docking = False
-            make_selection = True
+            make_docking = True
+            continuation = True
             iteration = get_last_iter_from_db(args.output)
-            if iteration is None:
-                raise FileExistsError("The data was not found in the existing database. Please check the database")
+            # if iteration is None:
+            #     raise FileExistsError("The data was not found in the existing database. Please check the database")
         else:
+            continuation = False
             create_db(args.output)
             make_docking = insert_starting_structures_to_db(args.input_frags, args.output)
-            make_selection = make_docking
 
         with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
             json.dump(vars(args), f, sort_keys=True, indent=2)
@@ -852,14 +848,13 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
-                                 ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
-                                 make_selection=make_selection,
+                                 ncpu=args.ncpu, tmpdir=tmpdir, continuation=continuation, make_docking=make_docking,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
                                  use_dask=args.hostfile is not None)
             make_docking = True
-            make_selection = True
+            continuation = False
 
             if res:
                 iteration += 1
@@ -867,7 +862,7 @@ def main():
                     index_tanimoto -= 0.05
             else:
                 if iteration == 1:
-                    # 0 succesfull iteration for finally printing
+                    # 0 successful iteration for finally printing
                     iteration = 0
                 break
 
