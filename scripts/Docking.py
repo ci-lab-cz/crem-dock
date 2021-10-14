@@ -209,7 +209,7 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
         b = bag.from_sequence(smiles_dict.items(), npartitions=1000)
         for i, mol_id in enumerate(b.starmap(process_mol_docking,
                                              receptor_pdbqt_fname=receptor_pdbqt_fname,
-                                             center=center, box_size=box_size, dbname=dbname, ncpu=ncpu).compute(),
+                                             center=center, box_size=box_size, dbname=dbname, ncpu=1).compute(),
                                    1):
             if i % 100 == 0:
                 sys.stderr.write(f'\r{i} molecules were docked')
@@ -223,7 +223,7 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
         for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking, dbname=dbname,
                                                         receptor_pdbqt_fname=receptor_pdbqt_fname,
                                                         center=center, box_size=box_size,
-                                                        ncpu=ncpu, lock=lock),
+                                                        ncpu=1, lock=lock),
                                                 smiles_dict.items()), 1):
             if i % 100 == 0:
                 sys.stderr.write(f'\r{i} molecules were docked')
