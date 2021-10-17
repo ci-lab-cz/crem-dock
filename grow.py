@@ -115,8 +115,6 @@ def update_db(conn, iteration):
     parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
     for mol in mols:
-        mw = MolWt(mol)
-        rtb = CalcNumRotatableBonds(mol)
         rms = None
         mol_id = mol.GetProp('_Name')
         try:
@@ -127,12 +125,10 @@ def update_db(conn, iteration):
 
         cur.execute("""UPDATE mols
                            SET 
-                               rmsd = ?,
-                               mw = ?,
-                               rtb = ? 
+                               rmsd = ? 
                            WHERE
                                id = ?
-                        """, (rms, mw, rtb, mol_id))
+                        """, (rms, mol_id))
     conn.commit()
 
 
@@ -170,15 +166,15 @@ def get_docked_mol_ids(conn, iteration):
 
 def get_docked_mol_data(conn, iteration):
     """
-    Returns mol_ids, MW, RTB and RMSD for molecules which where docked at the given iteration and conversion
+    Returns mol_ids, RMSD for molecules which where docked at the given iteration and conversion
     to mol block was successful
     :param conn:
     :param iteration:
-    :return: DataFrame with columns MW, RTB and RMSD and mol_id as index
+    :return: DataFrame with columns RMSD and mol_id as index
     """
     cur = conn.cursor()
-    res = tuple(cur.execute(f"SELECT id, mw, rtb, rmsd FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL"))
-    df = pd.DataFrame(res, columns=['id', 'mw', 'rtb', 'rmsd']).set_index('id')
+    res = tuple(cur.execute(f"SELECT id, rmsd FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL"))
+    df = pd.DataFrame(res, columns=['id', 'rmsd']).set_index('id')
     return df
 
 
@@ -690,7 +686,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
-        mol_data = mol_data.loc[(mol_data['mw'] <= mw) & (mol_data['rtb'] <= rtb)]  # filter by MW and RTB
+        # mol_data = mol_data.loc[(mol_data['mw'] <= mw) & (mol_data['rtb'] <= rtb)]  # filter by MW and RTB
         if iteration != 1:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
         if len(mol_data.index) == 0:
@@ -717,25 +713,26 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
     if res:
         data = []
         nmols = -1
-
         for parent_mol, child_mols in res.items():
             parent_mol = Chem.AddHs(parent_mol)
             for mol in child_mols:
-                nmols += 1
-                isomers = get_isomers(mol)
-                for i, m in enumerate(isomers):
-                    m = Chem.AddHs(m)
-                    mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
-                    # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
-                    child_protected_canon_user_id = None
-                    if parent_mol.HasProp('protected_user_canon_ids'):
-                        parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
-                        child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
-                        child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
+                mol_mw, mol_rtb = MolWt(mol), CalcNumRotatableBonds(mol)
+                if mol_mw <= mw and mol_rtb <= rtb:
+                    nmols += 1
+                    isomers = get_isomers(mol)
+                    for i, m in enumerate(isomers):
+                        m = Chem.AddHs(m)
+                        mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
+                        # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
+                        child_protected_canon_user_id = None
+                        if parent_mol.HasProp('protected_user_canon_ids'):
+                            parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
+                            child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
+                            child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
-                    data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                                 parent_mol.GetProp('_Name'), None, None, None, None, None, None,
-                                 child_protected_canon_user_id))
+                        data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
+                                     parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, None, None, None,
+                                     child_protected_canon_user_id))
 
         insert_db(conn, data)
         return True
