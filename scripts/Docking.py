@@ -206,7 +206,8 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
 
     if use_dask:
         i = 0
-        b = bag.from_sequence(smiles_dict.items(), npartitions=1000)
+        # npart = max(len(smiles_dict) // 5, 1000)
+        b = bag.from_sequence(smiles_dict.items(), npartitions=len(smiles_dict))
         for i, mol_id in enumerate(b.starmap(process_mol_docking,
                                              receptor_pdbqt_fname=receptor_pdbqt_fname,
                                              center=center, box_size=box_size, dbname=dbname, ncpu=1).compute(),

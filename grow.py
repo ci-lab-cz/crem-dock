@@ -11,12 +11,12 @@ import tempfile
 import traceback
 from multiprocessing import cpu_count
 
+import dask
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from crem.crem import grow_mol
 from dask.distributed import Client
-from dask import bag
 from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdFMCS
@@ -804,6 +804,7 @@ def main():
     args = parser.parse_args()
 
     if args.hostfile is not None:
+        dask.config.set({'distributed.scheduler.allowed-failures': 30})
         dask_client = Client(open(args.hostfile).readline().strip() + ':8786')
         tmpdir = tempfile.mkdtemp()
         try:
