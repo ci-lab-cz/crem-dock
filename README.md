@@ -40,6 +40,10 @@ conda install -c conda-forge openbabel
 ```
 pip install git+https://github.com/ccsb-scripps/Meeko
 ```
+due to recent changes in Meeko the latest version may be not working, in this case the following installation can be used
+```
+pip install git+https://github.com/forlilab/Meeko@7b1a60d9451eabaeb16b08a4a497cf8e695acc63
+```
 
 **Scipy**
 ```
