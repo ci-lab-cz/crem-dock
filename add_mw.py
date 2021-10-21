@@ -3,6 +3,7 @@
 import argparse
 import sqlite3
 import sys
+from collections import defaultdict
 from multiprocessing import Pool
 
 from grow import filepath_type, cpu_type
@@ -11,13 +12,13 @@ from rdkit.Chem.Descriptors import MolWt
 
 
 def calc_mw(items):
-    # items - (rowid, smi)
-    rowid, smi = items
+    # items - (smi, dict of lists of rowids)
+    smi, rowids = items
     mw = None
     mol = Chem.MolFromSmiles(smi)
     if mol:
         mw = round(MolWt(mol), 2)
-    return rowid, mw
+    return rowids, mw
 
 
 def main():
@@ -38,21 +39,31 @@ def main():
         cur = conn.cursor()
         tables = cur.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'radius%'")
         tables = [i[0] for i in tables]
+
+        d = defaultdict(lambda: defaultdict(list))  # {smi: {radius1: [rowids], radius2: [rowids], ...}
+
         for table in tables:
             try:
                 cur.execute(f"ALTER TABLE {table} ADD COLUMN mw NUMERIC DEFAULT NULL")
                 conn.commit()
             except sqlite3.OperationalError as e:
                 sys.stderr.write(str(e) + '\n')
-            sys.stderr.write(f'\ntable {table} processed\n')
             cur.execute(f"SELECT rowid, core_smi FROM {table} WHERE mw IS NULL")
             res = cur.fetchall()
-            for i, (rowid, mw) in enumerate(pool.imap_unordered(calc_mw, res), 1):
-                if mw is not None:
-                    cur.execute(f"UPDATE {table} SET mw = {mw} WHERE rowid = '{rowid}'")
-                if args.verbose and i % 1000 == 0:
-                    sys.stderr.write(f'\r{i} fragments processed')
-            conn.commit()
+
+            # convert to dict to merge identical smiles
+            for rowid, smi in res:
+                d[smi][table].append(rowid)
+
+        for i, (rowids, mw) in enumerate(pool.imap_unordered(calc_mw, d.items()), 1):
+            if mw is not None:
+                for table, ids in rowids.items():
+                    cur.execute(f"UPDATE {table} SET mw = {mw} WHERE rowid IN ({','.join('?' * len(ids))})", ids)
+            if i % 10000 == 0:
+                conn.commit()
+                if args.verbose:
+                    sys.stderr.write(f'\r{i} fragments processed out of {len(d)}')
+        conn.commit()
 
 
 if __name__ == '__main__':
