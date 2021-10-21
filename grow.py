@@ -76,6 +76,11 @@ def add_protonation(conn, iteration):
     '''
     cur = conn.cursor()
     smiles_dict = cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'")
+
+    if not smiles_dict:
+        sys.stderr.write(f'no molecules to protonate in iteration {iteration}\n')
+        return
+
     smiles, mol_ids = zip(*smiles_dict)
 
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
