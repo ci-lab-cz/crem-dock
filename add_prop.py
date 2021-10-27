@@ -11,13 +11,17 @@ from grow import filepath_type, cpu_type
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
+from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
+
+
+props = ['mw', 'logp', 'rtb']
 
 
 def property_type(x):
-    return [item.lower() for item in x if item.lower() in ['mw', 'logp']]
+    return [item.lower() for item in x if item.lower() in props]
 
 
-def calc(items, mw=False, logp=False):
+def calc(items, mw=False, logp=False, rtb=False):
     # items - (smi, dict of lists of rowids)
     smi, rowids = items
     res = dict()
@@ -27,6 +31,8 @@ def calc(items, mw=False, logp=False):
             res['mw'] = round(MolWt(mol), 2)
         if logp:
             res['logp'] = round(MolLogP(mol), 2)
+        if rtb:
+            res['rtb'] = CalcNumRotatableBonds(mol)
     return rowids, res
 
 
@@ -36,8 +42,8 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-i', '--input', metavar='FILENAME', required=True, type=filepath_type,
                         help='SQLite DB with CReM fragments.')
-    parser.add_argument('-p', '--properties', metavar='NAMES', required=False, nargs='*', default=['mw', 'logp'],
-                        help='properties to compute: mw, logp.')
+    parser.add_argument('-p', '--properties', metavar='NAMES', required=False, nargs='*', default=props,
+                        help='properties to compute.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
@@ -76,8 +82,9 @@ def main():
 
         mw = 'mw' in args.properties
         logp = 'logp' in args.properties
+        rtb = 'rtb' in args.properties
 
-        for i, (rowids, res) in enumerate(pool.imap_unordered(partial(calc, mw=mw, logp=logp), d.items()), 1):
+        for i, (rowids, res) in enumerate(pool.imap_unordered(partial(calc, mw=mw, logp=logp, rtb=rtb), d.items()), 1):
             if res:
                 for table, ids in rowids.items():
                     values = ', '.join([f'{k} = {v}' for k, v in res.items()])
