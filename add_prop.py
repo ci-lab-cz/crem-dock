@@ -80,6 +80,10 @@ def main():
             for rowid, smi in res:
                 d[smi][table].append(rowid)
 
+        if not d:
+            sys.stderr.write(f'{args.input}: all requested properties were calculated previously. Exit.\n')
+            exit()
+
         mw = 'mw' in args.properties
         logp = 'logp' in args.properties
         rtb = 'rtb' in args.properties
