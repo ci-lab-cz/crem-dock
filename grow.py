@@ -12,7 +12,6 @@ import traceback
 from multiprocessing import cpu_count
 
 import dask
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from crem.crem import grow_mol
@@ -585,15 +584,6 @@ def identify_pareto(df, tmpdir):
             if all(scores[j] <= scores[i]) and any(scores[j] < scores[i]):
                 pareto_front[i] = 0
                 break
-    pareto = df.loc[pareto_front]
-    x_all, y_all = df[0], df[1]
-    x_pareto, y_pareto = pareto[0], pareto[1]
-    plt.figure(figsize=(10, 10))
-    plt.scatter(x_all, y_all)
-    plt.plot(x_pareto, y_pareto, color='r')
-    plt.xlabel('Docking_score')
-    plt.ylabel('Mol_wweight')
-    plt.savefig(tmpdir + '.jpg')
     return population_ids[pareto_front].tolist()
 
 
