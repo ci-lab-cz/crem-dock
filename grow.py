@@ -10,6 +10,7 @@ import sys
 import tempfile
 import traceback
 from multiprocessing import cpu_count
+from collections import defaultdict
 
 import dask
 import numpy as np
@@ -22,8 +23,8 @@ from rdkit.Chem import rdFMCS
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
-from rdkit.ML.Cluster import Butina
 from scipy.spatial import distance_matrix
+from sklearn.cluster import KMeans
 
 from scripts import Docking
 
@@ -247,28 +248,25 @@ def sort_clusters(conn, clusters):
     return output
 
 
-def gen_cluster_subset_algButina(mols, tanimoto):
+def get_clusters_by_KMeans(mols, nclust):
     """
     Returns tuple of tuples with mol ids in each cluster
     :param mols: list of molecules
     :param tanimoto: tanimoto threshold for clustering
     :return:
     """
-    dict_index = {}
+    clusters = defaultdict(list)
     fps = []
-    for i, mol in enumerate(mols):
-        fp = AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=512)  ### why so few?
-        fps.append(fp)
-        dict_index[i] = mol.GetProp('_Name')
-    dists = []
-    for i, fp in enumerate(fps):
-        distance_matrix = DataStructs.BulkTanimotoSimilarity(fps[i], fps[:i])
-        dists.extend([1 - x for x in distance_matrix])
-    # returns tuple of tuples with sequential numbers of compounds in each cluster
-    cs = Butina.ClusterData(dists, len(fps), 1 - tanimoto, isDistData=True)
-    # replace sequential ids with actual mol ids
-    output = tuple(tuple((dict_index[y] for y in x)) for x in cs)
-    return output
+    idx_mols = []
+    for mol in mols:
+        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024)) ### why so few?
+        idx_mols.append(mol.GetProp('_Name'))
+    X = np.array(fps)
+
+    labels = KMeans(n_clusters=nclust, random_state=0).fit_predict(X).tolist()
+    for idx, cluster in zip(idx_mols, labels):
+        clusters[cluster].append(idx)
+    return tuple(tuple(x) for x in clusters.values())
 
 
 def get_protected_ids(mol, protein_xyz, dist_threshold):
@@ -313,7 +311,7 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
     return xyz
 
 
-def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mol(mol, protein_xyz, h_dist_threshold=2, ncpu=1, **kwargs):
 
     # def find_protected_ids(protected_ids, mol1, mol2):
     #     """
@@ -381,7 +379,7 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     return res
 
 
-def __grow_mols(conn, mols, protein_pdbqt, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
@@ -394,7 +392,7 @@ def __grow_mols(conn, mols, protein_pdbqt, protonation, h_dist_threshold=2, ncpu
     res = dict()
     protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
     for mol in mols:
-        tmp = __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
+        tmp = __grow_mol(mol, protein_xyz, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol] = tmp
     return res
@@ -489,7 +487,7 @@ def get_last_iter_from_db(db_fname):
         return res + 1
 
 
-def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
+def selection_grow_greedy(mols, conn, protein_pdbqt, ntop, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -502,11 +500,11 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, 
     :return: dict of parent mol and lists of corresponding generated mols
     """
     selected_mols = select_top_mols(mols, conn, ntop)
-    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
+    res = __grow_mols(selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
+def selection_grow_clust(mols, conn, nclust, protein_pdbqt, ntop, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -519,7 +517,7 @@ def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop,
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
-    clusters = gen_cluster_subset_algButina(mols, tanimoto)
+    clusters = get_clusters_by_KMeans(mols, nclust)
     sorted_clusters = sort_clusters(conn, clusters)
     # select top n mols from each cluster
     selected_mols = []
@@ -529,11 +527,11 @@ def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop,
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
     # grow selected mols
-    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
+    res = __grow_mols(conn, selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
+def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -547,7 +545,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, 
     :return: dict of parent mol and lists of corresponding generated mols
     """
     res = dict()
-    clusters = gen_cluster_subset_algButina(mols, tanimoto)
+    clusters = get_clusters_by_KMeans(mols, nclust)
     sorted_clusters = sort_clusters(conn, clusters)
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
@@ -557,7 +555,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, 
     for cluster in sorted_clusters:
         processed_mols = 0
         for mol_id in cluster:
-            tmp = __grow_mol(conn, mol_dict[mol_id], protein_xyz, protonation, ncpu=ncpu, **kwargs)
+            tmp = __grow_mol(mol_dict[mol_id], protein_xyz, ncpu=ncpu, **kwargs)
             if tmp:
                 res[mol_dict[mol_id]] = tmp
                 processed_mols += 1
@@ -566,7 +564,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, 
     return res
 
 
-def identify_pareto(df, tmpdir):
+def identify_pareto(df):
     """
     Return ids of mols on pareto front
     :param df:
@@ -587,7 +585,7 @@ def identify_pareto(df, tmpdir):
     return population_ids[pareto_front].tolist()
 
 
-def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, tmpdir, **kwargs):
+def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, **kwargs):
     """
 
     :param mols:
@@ -609,7 +607,7 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, t
     scores = get_mol_scores(conn, mol_ids)
     scores_mw = {mol_id: [score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
-    mols_pareto = identify_pareto(pareto_front_df, tmpdir)
+    mols_pareto = identify_pareto(pareto_front_df)
     mols = get_mols(conn, mols_pareto)
     res = __grow_mols(conn, mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
     return res
@@ -667,7 +665,7 @@ def get_isomers(mol):
     return isomers
 
 
-def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
+def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, continuation=True, make_docking=True, use_dask=False, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -689,21 +687,21 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
         else:
             mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
-                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, protonation=protonation,
+                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt,
                                             ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
-                res = selection_grow_clust_deep(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
-                                                protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
+                res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
+                                                ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
-                res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
-                                           protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
+                res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
+                                           ntop=ntop, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
-                                          protonation=protonation, ncpu=ncpu, tmpdir=tmpdir, **kwargs)
+                                          ncpu=ncpu, tmpdir=tmpdir, **kwargs)
 
     else:
         mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
-        res = __grow_mols(conn, mols=mols, protein_pdbqt=protein_pdbqt, protonation=protonation, ncpu=ncpu, **kwargs)
+        res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, ncpu=ncpu, **kwargs)
 
     if res:
         data = []
@@ -776,6 +774,8 @@ def main():
                         help='maximum ligand weight to pass on the next iteration.')
     parser.add_argument('--ntop', type=int, default=20, required=False,
                         help='the number of the best molecules to select for the next iteration.')
+    parser.add_argument('--nclust', type=int, default=20, required=False,
+                        help='the number of clusters the user wants to get after clustering KMeans.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--rotatable_bonds', type=int, default=5, required=False,
@@ -838,9 +838,8 @@ def main():
             json.dump(vars(args), f, sort_keys=True, indent=2)
 
         while True:
-            index_tanimoto = 0.9  # required for alg 2 and 3
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
-                                 protein_setup=args.protein_setup, ntop=args.ntop, tanimoto=index_tanimoto,
+                                 protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
                                  ncpu=args.ncpu, tmpdir=tmpdir, continuation=continuation, make_docking=make_docking,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
@@ -852,8 +851,6 @@ def main():
 
             if res:
                 iteration += 1
-                if args.algorithm in [2, 3]:
-                    index_tanimoto -= 0.05
             else:
                 if iteration == 1:
                     # 0 successful iteration for finally printing
