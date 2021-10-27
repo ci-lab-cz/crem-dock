@@ -773,7 +773,8 @@ def main():
     parser.add_argument('--mw', default=500, type=int,
                         help='maximum ligand weight to pass on the next iteration.')
     parser.add_argument('--ntop', type=int, default=20, required=False,
-                        help='the number of the best molecules to select for the next iteration.')
+                        help='the number of the best molecules to select for the next iteration in case greedy search/'
+                             'the number of molecules from each cluster in case clustering.')
     parser.add_argument('--nclust', type=int, default=20, required=False,
                         help='the number of clusters the user wants to get after clustering KMeans.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
