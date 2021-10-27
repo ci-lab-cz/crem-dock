@@ -21,6 +21,7 @@ from rdkit import Chem, DataStructs
 from rdkit.Chem import AllChem
 from rdkit.Chem import rdFMCS
 from rdkit.Chem.Descriptors import MolWt
+from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from scipy.spatial import distance_matrix
@@ -400,7 +401,7 @@ def __grow_mols(mols, protein_pdbqt, h_dist_threshold=2, ncpu=1, **kwargs):
 
 def insert_db(conn, data):
     cur = conn.cursor()
-    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
+    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
     conn.commit()
 
 
@@ -421,6 +422,7 @@ def create_db(fname):
              parent_id TEXT,
              docking_score REAL,
              mw REAL,
+             logP REAL,
              rtb INTEGER,
              rmsd REAL,
              pdb_block TEXT,
@@ -447,8 +449,10 @@ def insert_starting_structures_to_db(fname, db_fname):
                 for i, line in enumerate(f):
                     tmp = line.strip().split()
                     smi = tmp[0]
+                    mol = Chem.MolFromSmiles(smi)
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    data.append((name, 0, smi, None, None, None, None, None, None, None, None, None))
+                    data.append((name, 0, smi, None, None, None, round(MolWt(mol), 2),
+                                 round(MolLogP(mol), 2), CalcNumRotatableBonds(mol), None, None, None, None))
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -465,7 +469,7 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
 
                     data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None,
-                                 None, None, None, None, None, Chem.MolToMolBlock(mol), protected_user_canon_ids))
+                                 None, None, None, None, None, None, Chem.MolToMolBlock(mol), protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -709,7 +713,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
         for parent_mol, child_mols in res.items():
             parent_mol = Chem.AddHs(parent_mol)
             for mol in child_mols:
-                mol_mw, mol_rtb = MolWt(mol), CalcNumRotatableBonds(mol)
+                mol_mw, mol_rtb = round(MolWt(mol), 2), round(CalcNumRotatableBonds(mol), 2)
                 if mol_mw <= mw and mol_rtb <= rtb:
                     nmols += 1
                     isomers = get_isomers(mol)
@@ -724,7 +728,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
                             child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
                         data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                                     parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, None, None, None,
+                                     parent_mol.GetProp('_Name'), None, mol_mw, round(MolLogP(mol), 2), mol_rtb, None, None, None,
                                      child_protected_canon_user_id))
 
         insert_db(conn, data)
