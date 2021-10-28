@@ -16,6 +16,12 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 
 props = ['mw', 'logp', 'rtb']
 
+# SQLite DB will be updated by chunks
+if sqlite3.sqlite_version_info[:2] <= (3, 32):
+    CHUNK_SIZE = 999
+else:
+    CHUNK_SIZE = 32766
+
 
 def property_type(x):
     return [item.lower() for item in x if item.lower() in props]
@@ -92,8 +98,9 @@ def main():
             if res:
                 for table, ids in rowids.items():
                     values = ', '.join([f'{k} = {v}' for k, v in res.items()])
-                    sql = f"UPDATE {table} SET {values} WHERE rowid IN ({','.join('?' * len(ids))})"
-                    cur.execute(sql, ids)
+                    for j in range(0, len(ids), CHUNK_SIZE):  # update DB by chunks
+                        sql = f"UPDATE {table} SET {values} WHERE rowid IN ({','.join('?' * len(ids[j:j+CHUNK_SIZE]))})"
+                        cur.execute(sql, ids[j:j+CHUNK_SIZE])
             if i % 10000 == 0:
                 conn.commit()
                 if args.verbose:
