@@ -469,7 +469,8 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
 
                     data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None,
-                                 None, None, None, None, None, None, Chem.MolToMolBlock(mol), protected_user_canon_ids))
+                                 None, round(MolWt(mol), 2), round(MolLogP(mol), 2), CalcNumRotatableBonds(mol), None,
+                                 None, Chem.MolToMolBlock(mol), protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -531,7 +532,7 @@ def selection_grow_clust(mols, conn, nclust, protein_pdbqt, ntop, ncpu=1, **kwar
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
     # grow selected mols
-    res = __grow_mols(conn, selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
+    res = __grow_mols(selected_mols, protein_pdbqt, ncpu=ncpu, **kwargs)
     return res
 
 
