@@ -801,6 +801,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.algorithm == 3 and (args.nclust*args.ntop > 20):
+        sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
+                         'will result in selection on each iteration more than 20 molecules that may slower computations.\n')
+        sys.stderr.flush()
+
     if args.hostfile is not None:
         dask.config.set({'distributed.scheduler.allowed-failures': 30})
         dask_client = Client(open(args.hostfile).readline().strip() + ':8786')
