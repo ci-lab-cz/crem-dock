@@ -75,13 +75,13 @@ def add_protonation(conn, iteration):
     :return:
     '''
     cur = conn.cursor()
-    smiles_dict = cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'")
+    smiles_dict = dict(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'"))
 
     if not smiles_dict:
         sys.stderr.write(f'no molecules to protonate in iteration {iteration}\n')
         return
 
-    smiles, mol_ids = zip(*smiles_dict)
+    smiles, mol_ids = zip(*smiles_dict.items())
 
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
         tmp.writelines(['\n'.join(smiles)])
@@ -314,7 +314,7 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
     return xyz
 
 
-def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mol(conn, mol, protein_xyz, protonation, max_mw, max_rtb, h_dist_threshold=2, ncpu=1, **kwargs):
 
     # def find_protected_ids(protected_ids, mol1, mol2):
     #     """
@@ -342,6 +342,11 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     #     ids = [j for i, j in zip(mcs1, mcs2) if i in protected_ids]
     #     return ids
 
+    mw = max_mw - Chem.Descriptors.MolWt(mol)
+    if mw <= 0:
+        return []
+    rtb = max_rtb - CalcNumRotatableBonds(mol)
+
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
     if mol.HasProp('protected_user_canon_ids'):
@@ -368,7 +373,8 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     #     mol = mol2
 
     try:
-        res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu, **kwargs))
+        res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
+                            mw=(1, mw), rtb=(0, rtb), **kwargs))
     except Exception:
         error_message = traceback.format_exc()
         sys.stderr.write(f'Grow error.\n'
@@ -382,7 +388,7 @@ def __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=2, ncpu=1, 
     return res
 
 
-def __grow_mols(conn, mols, protein_pdbqt, protonation, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mols(conn, mols, protein_pdbqt, protonation, max_mw, max_rtb, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
@@ -395,7 +401,8 @@ def __grow_mols(conn, mols, protein_pdbqt, protonation, h_dist_threshold=2, ncpu
     res = dict()
     protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
     for mol in mols:
-        tmp = __grow_mol(conn, mol, protein_xyz, protonation, h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
+        tmp = __grow_mol(conn, mol, protein_xyz, protonation, max_mw=max_mw, max_rtb=max_rtb,
+                         h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol] = tmp
     return res
@@ -495,7 +502,7 @@ def get_last_iter_from_db(db_fname):
         return res + 1
 
 
-def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
+def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, max_mw, max_rtb, ntop, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -503,16 +510,18 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, protonation, ntop, ncpu=1, 
     :param protein_pdbqt:
     :param protonation:
     :param ntop:
+    :param max_mw:
+    :param max_rtb:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
     selected_mols = select_top_mols(mols, conn, ntop)
-    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
+    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, max_mw=max_mw, max_rtb=max_rtb, ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
+def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, max_mw, max_rtb, ntop, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -521,6 +530,7 @@ def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop,
     :param protein_pdbqt:
     :param protonation:
     :param ntop:
+    :param max_mw:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
@@ -535,11 +545,11 @@ def selection_grow_clust(mols, conn, tanimoto, protein_pdbqt, protonation, ntop,
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
     # grow selected mols
-    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
+    res = __grow_mols(conn, selected_mols, protein_pdbqt, protonation, max_mw=max_mw, max_rtb=max_rtb, ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, ntop, ncpu=1, **kwargs):
+def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, ntop, max_mw, max_rtb, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -548,6 +558,7 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, 
     :param protein_pdbqt:
     :param protonation:
     :param ntop:
+    :param max_mw:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
@@ -563,7 +574,8 @@ def selection_grow_clust_deep(mols, conn, tanimoto, protein_pdbqt, protonation, 
     for cluster in sorted_clusters:
         processed_mols = 0
         for mol_id in cluster:
-            tmp = __grow_mol(conn, mol_dict[mol_id], protein_xyz, protonation, ncpu=ncpu, **kwargs)
+            tmp = __grow_mol(conn, mol_dict[mol_id], protein_xyz, protonation, max_mw=max_mw, max_rtb=max_rtb,
+                             ncpu=ncpu, **kwargs)
             if tmp:
                 res[mol_dict[mol_id]] = tmp
                 processed_mols += 1
@@ -626,7 +638,7 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, protonation, ncpu, t
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df, tmpdir)
     mols = get_mols(conn, mols_pareto)
-    res = __grow_mols(conn, mols, protein_pdbqt, protonation, ncpu=ncpu, **kwargs)
+    res = __grow_mols(conn, mols, protein_pdbqt, protonation, max_mw=mw, max_rtb=rtb, ncpu=ncpu, **kwargs)
     return res
 
 
@@ -713,13 +725,15 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
             mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt, protonation=protonation,
-                                            ntop=ntop, ncpu=ncpu, **kwargs)
+                                            ntop=ntop, max_mw=mw, max_rtb=rtb, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
                 res = selection_grow_clust_deep(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
-                                                protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
+                                                protonation=protonation, ntop=ntop, max_mw=mw, max_rtb=rtb, ncpu=ncpu,
+                                                **kwargs)
             elif alg_type == 3:
                 res = selection_grow_clust(mols=mols, conn=conn, tanimoto=tanimoto, protein_pdbqt=protein_pdbqt,
-                                           protonation=protonation, ntop=ntop, ncpu=ncpu, **kwargs)
+                                           protonation=protonation, ntop=ntop, max_mw=mw, max_rtb=rtb, ncpu=ncpu,
+                                           **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, protein_pdbqt=protein_pdbqt,
                                           protonation=protonation, ncpu=ncpu, tmpdir=tmpdir, **kwargs)
