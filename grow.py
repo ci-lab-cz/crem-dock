@@ -453,7 +453,8 @@ def insert_starting_structures_to_db(fname, db_fname):
                     tmp = line.strip().split()
                     smi = tmp[0]
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    data.append((name, 0, smi, None, None, None, None, None, None, None, None, None, None, None))
+                    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(Chem.MolFromSmiles(smi))
+                    data.append((name, 0, smi, None, None, None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None, None, None))
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -468,9 +469,11 @@ def insert_starting_structures_to_db(fname, db_fname):
                         # rdkit numeration starts with 0 and sdf numeration starts with 1
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
+                    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
 
                     data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None,
-                                 None, None, None, None, None, None, Chem.MolToMolBlock(mol), protected_user_canon_ids))
+                                 mol_mw, mol_rtb, mol_logp, mol_qed, None, None, Chem.MolToMolBlock(mol),
+                                 protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -679,6 +682,14 @@ def get_isomers(mol):
     return isomers
 
 
+def calc_properties(mol):
+    mw = round(MolWt(mol), 2)
+    rtb = CalcNumRotatableBonds(mol)
+    logp = round(CalcCrippenDescriptors(mol)[0], 2)
+    qed = round(QED.qed(mol), 3)
+    return mw, rtb, logp, qed
+
+
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimoto, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, continuation=True, make_docking=True, use_dask=False, **kwargs):
 
@@ -723,10 +734,8 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, tanimo
         for parent_mol, child_mols in res.items():
             parent_mol = Chem.AddHs(parent_mol)
             for mol in child_mols:
-                mol_mw, mol_rtb = MolWt(mol), CalcNumRotatableBonds(mol)
+                mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
                 if mol_mw <= mw and mol_rtb <= rtb:
-                    mol_logp = round(CalcCrippenDescriptors(mol)[0], 2)
-                    mol_qed = round(QED.qed(mol), 3)
                     nmols += 1
                     isomers = get_isomers(mol)
                     for i, m in enumerate(isomers):
