@@ -5,6 +5,7 @@
 * **Openbabel (>=3)**
 * **Meeko**
 * **Scipy**
+* **Scikit-learn**
 * **CReM**
 
 ## Installation
@@ -45,9 +46,9 @@ due to recent changes in Meeko the latest version may be not working, in this ca
 pip install git+https://github.com/forlilab/Meeko@7b1a60d9451eabaeb16b08a4a497cf8e695acc63
 ```
 
-**Scipy**
+**Scipy and Scikit-learn**
 ```
-conda install scipy
+conda install scipy scikit-learn
 ```
 
 **CReM**
