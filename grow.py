@@ -804,8 +804,8 @@ def main():
                         help='the number of KMeans clusters to consider for molecule selection.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
-    parser.add_argument('--rotatable_bonds', type=int, default=5, required=False,
-                        help='maximum allowed number of rotatable bonds in a compound to pass on the next iteration.')
+    parser.add_argument('--rtb', type=int, default=5, required=False,
+                        help='maximum allowed number of rotatable bonds in a compound.')
     parser.add_argument('--tmpdir', metavar='DIRNAME', default=None, type=filepath_type,
                         help='directory where temporary files will be stored. If omitted tmp dir will be created in '
                              'the same location as output DB.')
