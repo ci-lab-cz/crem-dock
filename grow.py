@@ -872,7 +872,7 @@ def main():
         while True:
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
-                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rotatable_bonds, alg_type=args.algorithm,
+                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, alg_type=args.algorithm,
                                  ncpu=args.ncpu, tmpdir=tmpdir, continuation=continuation, make_docking=make_docking,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
