@@ -341,7 +341,9 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, h_dist_threshold=2, ncpu=1, **
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
-    rtb = max_rtb - CalcNumRotatableBonds(mol)
+    rtb = max_rtb - CalcNumRotatableBonds(mol) - 1 # it is necessary to take into account the formation of bonds during the growth of the molecule
+    if rtb == -1:
+        return []
 
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
