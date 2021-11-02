@@ -680,7 +680,7 @@ def get_isomers(mol):
 
 def calc_properties(mol):
     mw = round(MolWt(mol), 2)
-    rtb = CalcNumRotatableBonds(mol)
+    rtb = CalcNumRotatableBonds(Chem.RemoveHs(mol)) # does not count things like amide or ester bonds
     logp = round(MolLogP(mol), 2)
     qed = round(QED.qed(mol), 3)
     return mw, rtb, logp, qed
