@@ -861,8 +861,8 @@ def main():
             make_docking = True
             continuation = True
             iteration = get_last_iter_from_db(args.output)
-            # if iteration is None:
-            #     raise FileExistsError("The data was not found in the existing database. Please check the database")
+            if iteration is None:
+                raise IOError("The last iteration could not be retrieved from the database. Please check it.")
         else:
             continuation = False
             create_db(args.output)
