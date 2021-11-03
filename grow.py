@@ -413,7 +413,7 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, h_dist_threshold=2, ncpu=1
 
 def insert_db(conn, data):
     cur = conn.cursor()
-    cur.executemany("""INSERT INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
+    cur.executemany("""INSERT OR IGNORE INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
     conn.commit()
 
 
@@ -429,7 +429,7 @@ def create_db(fname):
             (
              id TEXT PRIMARY KEY,
              iteration INTEGER,
-             smi TEXT,
+             smi TEXT NOT NULL UNIQUE,
              smi_protonated TEXT,
              parent_id TEXT,
              docking_score REAL,
