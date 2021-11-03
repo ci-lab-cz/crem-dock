@@ -75,20 +75,24 @@ def add_protonation(conn, iteration):
     :return:
     '''
     cur = conn.cursor()
-    smiles_dict = dict(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = {iteration - 1} AND "
+    smiles_list = list(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = {iteration - 1} AND "
                                    f"smi_protonated is NULL"))
-
-    if not smiles_dict:
+    if not smiles_list:
         sys.stderr.write(f'no molecules to protonate in iteration {iteration}\n')
         return
 
-    smiles, mol_ids = zip(*smiles_dict.items())
+    smiles, mol_ids = zip(*smiles_list)
 
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        tmp.writelines(['\n'.join(smiles)])
-        tmp.seek(0)
-        cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}'"
-        smiles_protonated = subprocess.check_output(cmd_run, shell=True).decode().split()
+        fd, output = tempfile.mkstemp()   # use output file to avoid overflow of stdout is extreme cases
+        try:
+            tmp.writelines(['\n'.join(smiles)])
+            tmp.flush()
+            cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
+            subprocess.call(cmd_run, shell=True)
+            smiles_protonated = open(output).read().split('\n')
+        finally:
+            os.remove(output)
 
     for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
         cur.execute("""UPDATE mols
