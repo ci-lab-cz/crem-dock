@@ -75,7 +75,8 @@ def add_protonation(conn, iteration):
     :return:
     '''
     cur = conn.cursor()
-    smiles_dict = dict(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = '{iteration - 1}'"))
+    smiles_dict = dict(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = {iteration - 1} AND "
+                                   f"smi_protonated is NULL"))
 
     if not smiles_dict:
         sys.stderr.write(f'no molecules to protonate in iteration {iteration}\n')
@@ -689,11 +690,11 @@ def calc_properties(mol):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, protonation, continuation=True, make_docking=True, use_dask=False, **kwargs):
+                   ncpu, tmpdir, protonation, make_docking=True, use_dask=False, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
-    if protonation and not continuation:
+    if protonation:
         add_protonation(conn, iteration)
     if make_docking:
         Docking.iter_docking(dbname=dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
@@ -852,19 +853,17 @@ def main():
     iteration = 1
 
     # depending on input setup operations applied on the first iteration
-    # input      make_docking & make_selection   continuation (to avoid protonation on the first step)
-    # SMILES                              True          False
-    # 3D SDF                             False          False
-    # existed DB                          True           True
+    # input      make_docking & make_selection
+    # SMILES                              True
+    # 3D SDF                             False
+    # existed DB                          True
     try:
         if os.path.isfile(args.output):
             make_docking = True
-            continuation = True
             iteration = get_last_iter_from_db(args.output)
             if iteration is None:
                 raise IOError("The last iteration could not be retrieved from the database. Please check it.")
         else:
-            continuation = False
             create_db(args.output)
             make_docking = insert_starting_structures_to_db(args.input_frags, args.output)
 
@@ -875,13 +874,12 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, alg_type=args.algorithm,
-                                 ncpu=args.ncpu, tmpdir=tmpdir, continuation=continuation, make_docking=make_docking,
+                                 ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
                                  use_dask=args.hostfile is not None)
             make_docking = True
-            continuation = False
 
             if res:
                 iteration += 1
