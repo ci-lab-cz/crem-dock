@@ -823,7 +823,7 @@ def main():
 
     args = parser.parse_args()
 
-    if args.algorithm == 3 and (args.nclust*args.ntop > 20):
+    if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
                          'will result in selection on each iteration more than 20 molecules that may slower '
                          'computations.\n')
