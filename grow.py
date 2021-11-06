@@ -9,8 +9,9 @@ import subprocess
 import sys
 import tempfile
 import traceback
-from multiprocessing import cpu_count
 from collections import defaultdict
+from functools import partial
+from multiprocessing import cpu_count, Pool
 
 import dask
 import numpy as np
@@ -26,7 +27,7 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
 
-from scripts import Docking
+from scripts import Docking, plif
 
 
 def cpu_type(x):
@@ -38,6 +39,17 @@ def filepath_type(x):
         return os.path.abspath(x)
     else:
         return x
+
+
+def str_lower_type(x):
+    if x:
+        return x.lower()
+    else:
+        return x
+
+
+def similarity_value_type(x):
+    return max(0, min(1, float(x)))
 
 
 def sort_two_lists(primary, secondary):
@@ -103,12 +115,15 @@ def add_protonation(conn, iteration):
     conn.commit()
 
 
-def update_db(conn, iteration):
+def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
     """
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
     :param conn: connection to docking DB
     :param iteration: current iteration
+    :param plif_ref: list of reference interactions (str)
+    :param plif_protein_fname: PDB file with a protein containing all hydrogens to calc plif
+    :param ncpu: number of cpu cores
     :return:
     """
     cur = conn.cursor()
@@ -124,6 +139,7 @@ def update_db(conn, iteration):
     parent_mols = get_mols(conn, uniq_parent_ids)
     parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
+    # update rmsd
     for mol in mols:
         rms = None
         mol_id = mol.GetProp('_Name')
@@ -139,6 +155,23 @@ def update_db(conn, iteration):
                            WHERE
                                id = ?
                         """, (rms, mol_id))
+    conn.commit()
+
+    # update plif
+    if plif_ref is not None:
+        pool = Pool(ncpu)
+        # prot = plf.Molecule(Chem.MolFromPDBFile(plif_protein_fname, removeHs=False))   # seems plf.Molecule is unpicklable
+        ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
+        for mol_id, sim in pool.imap_unordered(partial(plif.plif_similarity,
+                                                       plif_protein_fname=plif_protein_fname,
+                                                       plif_ref_df=ref_df),
+                                               mols):
+            cur.execute("""UPDATE mols
+                               SET 
+                                   plif_sim = ? 
+                               WHERE
+                                   id = ?
+                            """, (sim, mol_id))
     conn.commit()
 
 
@@ -183,8 +216,10 @@ def get_docked_mol_data(conn, iteration):
     :return: DataFrame with columns RMSD and mol_id as index
     """
     cur = conn.cursor()
-    res = tuple(cur.execute(f"SELECT id, rmsd FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL"))
-    df = pd.DataFrame(res, columns=['id', 'rmsd']).set_index('id')
+    res = tuple(cur.execute(f"SELECT id, rmsd, plif_sim "
+                            f"FROM mols "
+                            f"WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL"))
+    df = pd.DataFrame(res, columns=['id', 'rmsd', 'plif_sim']).set_index('id')
     return df
 
 
@@ -413,7 +448,7 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, h_dist_threshold=2, ncpu=1
 
 def insert_db(conn, data):
     cur = conn.cursor()
-    cur.executemany("""INSERT OR IGNORE INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
+    cur.executemany("""INSERT OR IGNORE INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
     conn.commit()
 
 
@@ -438,6 +473,7 @@ def create_db(fname):
              logp REAL,
              qed REAL,
              rmsd REAL,
+             plif_sim REAL,
              pdb_block TEXT,
              mol_block TEXT,
              protected_user_canon_ids TEXT DEFAULT NULL
@@ -464,7 +500,8 @@ def insert_starting_structures_to_db(fname, db_fname):
                     smi = tmp[0]
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
                     mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(Chem.MolFromSmiles(smi))
-                    data.append((name, 0, smi, None, None, None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None, None, None))
+                    data.append((name, 0, smi, None, None, None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None, None,
+                                 None, None))
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -481,7 +518,7 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
                     mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
                     data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None,
-                                 mol_mw, mol_rtb, mol_logp, mol_qed, None, None, Chem.MolToMolBlock(mol),
+                                 mol_mw, mol_rtb, mol_logp, mol_qed, None, None, None, Chem.MolToMolBlock(mol),
                                  protected_user_canon_ids))
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
@@ -702,7 +739,8 @@ def calc_properties(mol):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, protonation, make_docking=True, use_dask=False, **kwargs):
+                   ncpu, tmpdir, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
+                   plif_cutoff=1, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
@@ -711,13 +749,15 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     if make_docking:
         Docking.iter_docking(dbname=dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, iteration=iteration, use_dask=use_dask, ncpu=ncpu)
-        update_db(conn, iteration)
+        update_db(conn, iteration, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
         # mol_data = mol_data.loc[(mol_data['mw'] <= mw) & (mol_data['rtb'] <= rtb)]  # filter by MW and RTB
         if iteration != 1:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
+        if plif_list and len(mol_data.index) > 0:
+            mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
         if len(mol_data.index) == 0:
             sys.stderr.write(f'iteration {iteration}: no molecules were selected for growing.\n')
         else:
@@ -763,7 +803,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
 
                         data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
                                      parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None,
-                                     None, child_protected_canon_user_id))
+                                     None, None, child_protected_canon_user_id))
 
         insert_db(conn, data)
         return True
@@ -821,6 +861,15 @@ def main():
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--rtb', type=int, default=5, required=False,
                         help='maximum allowed number of rotatable bonds in a compound.')
+    parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
+                        help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
+                             'interaction which should be observed for a ligand to pass to the next iteration. Derive '
+                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG.A.Hydrophobic.')
+    parser.add_argument('--plif_protein', metavar='protein.pdb', default=None, required=False, type=filepath_type,
+                        help='PDB file with the same protein as for docking but containing all hydrogens. Required to '
+                             'identify protein-ligand interaction fingerprints.')
+    parser.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
+                        help='cutoff of Tversky similarity, value between 0 and 1.')
     parser.add_argument('--tmpdir', metavar='DIRNAME', default=None, type=filepath_type,
                         help='directory where temporary files will be stored. If omitted tmp dir will be created in '
                              'the same location as output DB.')
@@ -841,6 +890,10 @@ def main():
                          'will result in selection on each iteration more than 20 molecules that may slower '
                          'computations.\n')
         sys.stderr.flush()
+
+    if args.plif is not None and (args.plif_protein is None or not os.path.isfile(args.plif_protein)):
+        raise FileNotFoundError('PLIF pattern was specified but the protein file is missing or was not supplied. '
+                                'Calculation was aborted.')
 
     if args.hostfile is not None:
         dask.config.set({'distributed.scheduler.allowed-failures': 30})
@@ -890,7 +943,8 @@ def main():
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq,
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
-                                 use_dask=args.hostfile is not None)
+                                 use_dask=args.hostfile is not None, plif_list=args.plif,
+                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff)
             make_docking = True
 
             if res:
