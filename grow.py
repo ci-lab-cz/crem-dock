@@ -518,6 +518,8 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, ntop, ncpu
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
+    if len(mols) == 0:
+        return []
     selected_mols = select_top_mols(mols, conn, ntop)
     res = __grow_mols(selected_mols, protein_pdbqt, max_mw=max_mw, max_rtb=max_rtb, ncpu=ncpu, **kwargs)
     return res
@@ -537,6 +539,8 @@ def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, nto
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
+    if len(mols) == 0:
+        return []
     clusters = get_clusters_by_KMeans(mols, nclust)
     sorted_clusters = sort_clusters(conn, clusters)
     # select top n mols from each cluster
@@ -564,6 +568,8 @@ def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, m
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
+    if len(mols) == 0:
+        return []
     res = dict()
     clusters = get_clusters_by_KMeans(mols, nclust)
     sorted_clusters = sort_clusters(conn, clusters)
@@ -619,6 +625,8 @@ def selection_by_pareto(mols, conn, mw, rtb, protein_pdbqt, ncpu, **kwargs):
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
+    if len(mols) == 0:
+        return []
     mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1]
     if not mols:
         return None
