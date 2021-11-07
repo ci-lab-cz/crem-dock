@@ -7,6 +7,7 @@
 * **Scipy**
 * **Scikit-learn**
 * **CReM**
+* **ProLIF**
 
 ## Installation
 ```
@@ -54,4 +55,9 @@ conda install scipy scikit-learn
 **CReM**
 ```
 pip install crem
+```
+
+**ProLIF**
+```
+pip install git+https://github.com/chemosim-lab/ProLIF.git
 ```
