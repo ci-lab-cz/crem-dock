@@ -63,6 +63,8 @@ def ligand_preparation(smi):
 
     mol = Chem.MolFromSmiles(smi)
     mol_conf_sdf = convert2mol(mol)
+    if mol_conf_sdf is None:
+        return None
     mol_conf_pdbqt = mk_prepare_ligand_string(mol_conf_sdf,
                                               build_macrocycle=False,
                                               # can do it True, but there is some problem with >=7-chains mols
@@ -148,6 +150,8 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
                             """, (pdbqt_out, score, mol_block, mol_id))
 
     ligand_pdbqt = ligand_preparation(smi)
+    if ligand_pdbqt is None:
+        return mol_id
     score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
     mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
     if mol_block is None:
