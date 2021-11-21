@@ -738,6 +738,47 @@ def calc_properties(mol):
     return mw, rtb, logp, qed
 
 
+def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw):
+    """
+
+    :param parent_mol:
+    :param mol:
+    :param n: sequential number
+    :param iteration: iteration number
+    :param rtb: maximum allowed number of RTB
+    :param mw: maximum allowed MW
+    :return:
+    """
+    data = []
+    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
+    if mol_mw <= mw and mol_rtb <= rtb:
+        isomers = get_isomers(mol)
+        for i, m in enumerate(isomers):
+            m = Chem.AddHs(m)
+            mol_id = str(iteration).zfill(3) + '-' + str(n).zfill(6) + '-' + str(i).zfill(2)
+            # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
+            child_protected_canon_user_id = None
+            if parent_mol.HasProp('protected_user_canon_ids'):
+                parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(
+                    map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
+                child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
+                child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
+
+            data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
+                         parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None,
+                         None, None, child_protected_canon_user_id))
+    return data
+
+
+def supply_parent_child_mols(d):
+    # d - {parent_mol: [child_mol1, child_mol2, ...], ...}
+    n = 0
+    for parent_mol, child_mols in d.items():
+        for child_mol in child_mols:
+            yield parent_mol, child_mol, n
+            n += 1
+
+
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
                    plif_cutoff=1, **kwargs):
@@ -783,28 +824,11 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
 
     if res:
         data = []
-        nmols = -1
-        for parent_mol, child_mols in res.items():
-            parent_mol = Chem.AddHs(parent_mol)
-            for mol in child_mols:
-                mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
-                if mol_mw <= mw and mol_rtb <= rtb:
-                    nmols += 1
-                    isomers = get_isomers(mol)
-                    for i, m in enumerate(isomers):
-                        m = Chem.AddHs(m)
-                        mol_id = str(iteration).zfill(3) + '-' + str(nmols).zfill(6) + '-' + str(i).zfill(2)
-                        # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
-                        child_protected_canon_user_id = None
-                        if parent_mol.HasProp('protected_user_canon_ids'):
-                            parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
-                            child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
-                            child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
-
-                        data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                                     parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None,
-                                     None, None, child_protected_canon_user_id))
-
+        p = Pool(ncpu)
+        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw),
+                           supply_parent_child_mols(res)):
+            data.extend(d)
+        p.close()
         insert_db(conn, data)
         return True
 
