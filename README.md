@@ -1,5 +1,5 @@
 ## Dependency
-* **Python (>=3.5)**
+* **Python (>=3.7)**
 * **RDKit**  
 * **AutoDock Vina** 
 * **Openbabel (>=3)**
@@ -11,53 +11,19 @@
 
 ## Installation
 ```
-conda create -n vina python=3.7
+conda create -n vina
 conda activate vina
 ```
 
-**RDKit**
+Install dependencies from conda
 ```
-conda install -c conda-forge rdkit
+conda install -c conda-forge python=3.9 rdkit openbabel cython dask distributed scipy scikit-learn
 ```
 
-
-**AutoDock Vina**
-```
-conda install -c conda-forge -c ccsb-scripps vina 
-``` 
-
-or installation using pip:
-
+Install dependencies from pip anf github
 ```
 pip install vina
-```    
-
-
-**Openbabel**
-```
-conda install -c conda-forge openbabel
-```
-
-**Meeko**
-```
-pip install git+https://github.com/ccsb-scripps/Meeko
-```
-due to recent changes in Meeko the latest version may be not working, in this case the following installation can be used
-```
-pip install git+https://github.com/forlilab/Meeko@7b1a60d9451eabaeb16b08a4a497cf8e695acc63
-```
-
-**Scipy and Scikit-learn**
-```
-conda install scipy scikit-learn
-```
-
-**CReM**
-```
 pip install crem
-```
-
-**ProLIF**
-```
+pip install git+https://github.com/forlilab/Meeko@7b1a60d9451eabaeb16b08a4a497cf8e695acc63
 pip install git+https://github.com/chemosim-lab/ProLIF.git
 ```
