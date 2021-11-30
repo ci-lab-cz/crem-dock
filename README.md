@@ -6,7 +6,7 @@
 * **Meeko**
 * **Scipy**
 * **Scikit-learn**
-* **CReM**
+* **CReM (>= 0.2.7)**
 * **ProLIF**
 
 ## Installation
@@ -20,7 +20,7 @@ Install dependencies from conda
 conda install -c conda-forge python=3.9 rdkit openbabel cython dask distributed scipy scikit-learn
 ```
 
-Install dependencies from pip anf github
+Install dependencies from pip and github
 ```
 pip install vina
 pip install crem

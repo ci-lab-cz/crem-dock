@@ -412,7 +412,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, h_dist_threshold=2, ncpu=1, **
 
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
-                            mw=(1, mw), rtb=(0, rtb), **kwargs))
+                            symmetry_fixes=True, mw=(1, mw), rtb=(0, rtb), **kwargs))
     except Exception:
         error_message = traceback.format_exc()
         sys.stderr.write(f'Grow error.\n'
