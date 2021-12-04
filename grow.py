@@ -134,7 +134,7 @@ def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
     parent_ids = dict(cur.execute(f"SELECT id, parent_id "
                                   f"FROM mols "
                                   f"WHERE id IN ({','.join('?' * len(mol_ids))}) AND "
-                                  f"parent_id iS NOT NULL", mol_ids))
+                                  f"parent_id IS NOT NULL", mol_ids))
     uniq_parent_ids = list(set(parent_ids.values()))
     parent_mols = get_mols(conn, uniq_parent_ids)
     parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
@@ -418,7 +418,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, h_dist_threshold=2, ncpu=1, **
         sys.stderr.write(f'Grow error.\n'
                          f'{error_message}\n'
                          f'{mol.GetProp("_Name")}\n'
-                         f'{Chem.MolToSmiles(mol)}')
+                         f'{Chem.MolToSmiles(mol)}\n')
         res = []
 
     res = tuple(m for smi, m in res)
