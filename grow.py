@@ -758,7 +758,7 @@ def calc_properties(mol):
     return mw, rtb, logp, qed
 
 
-def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, prefix):
+def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
     """
 
     :param parent_mol:
@@ -771,7 +771,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, prefix):
     """
     data = []
     mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
-    if mol_mw <= mw and mol_rtb <= rtb:
+    if mol_mw <= mw and mol_rtb <= rtb and mol_logp <= logp:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
             m = Chem.AddHs(m)
@@ -801,8 +801,8 @@ def supply_parent_child_mols(d):
             n += 1
 
 
-def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, alg_type,
-                   ncpu, tmpdir, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
+def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
+                   ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
                    plif_cutoff=1, prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -847,7 +847,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     if res:
         data = []
         p = Pool(ncpu)
-        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, prefix=prefix),
+        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, logp=logp, prefix=prefix),
                            supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
@@ -907,6 +907,8 @@ def main():
                         help='maximum ligand molecular weight to pass on the next iteration.')
     parser.add_argument('--rtb', type=int, default=5, required=False,
                         help='maximum allowed number of rotatable bonds in a compound.')
+    parser.add_argument('--logp', type=float, default=4, required=False,
+                        help='maximum allowed logP of a compound.')
     parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
                              'interaction which should be observed for a ligand to pass to the next iteration. Derive '
@@ -985,10 +987,9 @@ def main():
         while True:
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
-                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, alg_type=args.algorithm,
-                                 ncpu=args.ncpu, tmpdir=tmpdir, make_docking=make_docking,
-                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq,
-                                 min_atoms=args.min_atoms, max_atoms=args.max_atoms,
+                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, alg_type=args.algorithm,
+                                 ncpu=args.ncpu, make_docking=make_docking, db_name=args.db, radius=args.radius,
+                                 min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
                                  use_dask=args.hostfile is not None, plif_list=args.plif,
                                  plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix)
