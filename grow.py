@@ -446,10 +446,16 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, h_dist_threshold=2, ncpu=1
     return res
 
 
-def insert_db(conn, data):
-    cur = conn.cursor()
-    cur.executemany("""INSERT OR IGNORE INTO mols VAlUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", data)
-    conn.commit()
+def insert_db(conn, data, cols=None):
+    if data:
+        cur = conn.cursor()
+        ncols = len(data[0])
+        if cols is None:
+            cur.executemany(f"INSERT OR IGNORE INTO mols VAlUES({','.join('?' * ncols)})", data)
+        else:
+            cols = ', '.join(cols)
+            cur.executemany(f"INSERT OR IGNORE INTO mols ({cols}) VAlUES({','.join('?' * ncols)})", data)
+        conn.commit()
 
 
 def create_db(fname):
@@ -483,7 +489,7 @@ def create_db(fname):
     conn.close()
 
 
-def insert_starting_structures_to_db(fname, db_fname):
+def insert_starting_structures_to_db(fname, db_fname, prefix):
     """
 
     :param fname: SMILES or SDF with 3D coordinates
@@ -501,8 +507,14 @@ def insert_starting_structures_to_db(fname, db_fname):
                     smi = tmp[0]
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
                     mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(Chem.MolFromSmiles(smi))
-                    data.append((name, 0, smi, None, None, None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None, None,
-                                 None, None))
+                    data.append((f'{prefix}-{name}' if prefix else name,
+                                 0,
+                                 smi,
+                                 mol_mw,
+                                 mol_rtb,
+                                 mol_logp,
+                                 mol_qed))
+            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed']
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -518,13 +530,20 @@ def insert_starting_structures_to_db(fname, db_fname):
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
                     mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
-                    data.append((name, 0, Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True), None, None, None,
-                                 mol_mw, mol_rtb, mol_logp, mol_qed, None, None, None, Chem.MolToMolBlock(mol),
+                    data.append((f'{prefix}-{name}' if prefix else name,
+                                 0,
+                                 Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True),
+                                 mol_mw,
+                                 mol_rtb,
+                                 mol_logp,
+                                 mol_qed,
+                                 Chem.MolToMolBlock(mol),
                                  protected_user_canon_ids))
+            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'mol_block', 'protected_user_canon_ids']
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
-        insert_db(conn, data)
+        insert_db(conn, data, cols)
     finally:
         conn.close()
     return make_docking
@@ -739,7 +758,7 @@ def calc_properties(mol):
     return mw, rtb, logp, qed
 
 
-def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw):
+def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, prefix):
     """
 
     :param parent_mol:
@@ -757,6 +776,8 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw):
         for i, m in enumerate(isomers):
             m = Chem.AddHs(m)
             mol_id = str(iteration).zfill(3) + '-' + str(n).zfill(6) + '-' + str(i).zfill(2)
+            if prefix:
+                mol_id = f'{prefix}-{mol_id}'
             # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
             child_protected_canon_user_id = None
             if parent_mol.HasProp('protected_user_canon_ids'):
@@ -782,7 +803,7 @@ def supply_parent_child_mols(d):
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, alg_type,
                    ncpu, tmpdir, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
-                   plif_cutoff=1, **kwargs):
+                   plif_cutoff=1, prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
@@ -826,7 +847,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     if res:
         data = []
         p = Pool(ncpu)
-        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw),
+        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, prefix=prefix),
                            supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
@@ -905,6 +926,9 @@ def main():
                              'passed as $PBS_NODEFILE variable from inside a PBS script. The first line in this file '
                              'will be the address of the scheduler running on the standard port 8786. If omitted, '
                              'calculations will run on a single machine as usual.')
+    parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
+                        help='prefix which will be added to all names. This might be useful if multiple runs are made '
+                             'which will be analyzed together.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
 
@@ -955,7 +979,7 @@ def main():
                 raise IOError("The last iteration could not be retrieved from the database. Please check it.")
         else:
             create_db(args.output)
-            make_docking = insert_starting_structures_to_db(args.input_frags, args.output)
+            make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
 
         with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
             json.dump(vars(args), f, sort_keys=True, indent=2)
@@ -969,7 +993,7 @@ def main():
                                  min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
                                  use_dask=args.hostfile is not None, plif_list=args.plif,
-                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff)
+                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix)
             make_docking = True
 
             if res:
