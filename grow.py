@@ -895,8 +895,6 @@ def main():
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
                              'molecules from a cluster cannot be grown they will be replaced with new lower scored '
                              'ones), 3 - clustering, 4 - Pareto front (MW vs. docking score).')
-    parser.add_argument('--mw', default=500, type=int,
-                        help='maximum ligand weight to pass on the next iteration.')
     parser.add_argument('--ntop', type=int, default=20, required=False,
                         help='the number of the best molecules to select for the next iteration in the case of greedy '
                              'search (algorithm 1) or the number of molecules from each cluster in the case of '
@@ -905,6 +903,8 @@ def main():
                         help='the number of KMeans clusters to consider for molecule selection.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
+    parser.add_argument('--mw', default=450, type=float,
+                        help='maximum ligand molecular weight to pass on the next iteration.')
     parser.add_argument('--rtb', type=int, default=5, required=False,
                         help='maximum allowed number of rotatable bonds in a compound.')
     parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
@@ -919,8 +919,6 @@ def main():
     parser.add_argument('--tmpdir', metavar='DIRNAME', default=None, type=filepath_type,
                         help='directory where temporary files will be stored. If omitted tmp dir will be created in '
                              'the same location as output DB.')
-    # parser.add_argument('--debug', action='store_true', default=False,
-    #                     help='enable debug mode; all tmp files will not be erased.')
     parser.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
                         help='text file with addresses of nodes of dask SSH cluster. The most typical, it can be '
                              'passed as $PBS_NODEFILE variable from inside a PBS script. The first line in this file '
