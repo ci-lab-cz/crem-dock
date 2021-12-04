@@ -476,7 +476,8 @@ def create_db(fname):
              plif_sim REAL,
              pdb_block TEXT,
              mol_block TEXT,
-             protected_user_canon_ids TEXT DEFAULT NULL
+             protected_user_canon_ids TEXT DEFAULT NULL,
+             time TEXT
             )""")
     conn.commit()
     conn.close()
@@ -766,7 +767,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw):
 
             data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
                          parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None,
-                         None, None, child_protected_canon_user_id))
+                         None, None, child_protected_canon_user_id, None))
     return data
 
 

@@ -147,7 +147,8 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
             conn.execute("""UPDATE mols
                                SET pdb_block = ?,
                                    docking_score = ?,
-                                   mol_block = ?
+                                   mol_block = ?,
+                                   time = CURRENT_TIMESTAMP
                                WHERE
                                    id = ?
                             """, (pdbqt_out, score, mol_block, mol_id))
