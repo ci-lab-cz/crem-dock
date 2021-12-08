@@ -52,9 +52,9 @@ def similarity_value_type(x):
     return max(0, min(1, float(x)))
 
 
-def sort_two_lists(primary, secondary):
+def sort_two_lists(primary, secondary, reverse=False):
     # sort two lists by order of elements of the primary list
-    paired_sorted = sorted(zip(primary, secondary), key=lambda x: x[0])
+    paired_sorted = sorted(zip(primary, secondary), key=lambda x: x[0], reverse=reverse)
     return map(list, zip(*paired_sorted))  # two lists
 
 
@@ -257,7 +257,19 @@ def get_mol_scores(conn, mol_ids):
     return dict(cur.execute(sql, mol_ids))
 
 
-def select_top_mols(mols, conn, ntop):
+def get_mol_qeds(conn, mol_ids):
+    """
+        Return dict of mol_id: qed
+        :param conn: connection to docking DB
+        :param mol_ids: list of mol ids
+        :return:
+        """
+    cur = conn.cursor()
+    sql = f'SELECT id, qed FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+    return dict(cur.execute(sql, mol_ids))
+
+
+def select_top_mols(mols, conn, ntop, ranking_func):
     """
     Returns list of ntop molecules with the highest score
     :param mols: list of molecules
@@ -266,24 +278,24 @@ def select_top_mols(mols, conn, ntop):
     :return:
     """
     mol_ids = get_mol_ids(mols)
-    scores = get_mol_scores(conn, mol_ids)
-    scores, mol_ids = sort_two_lists([scores[mol_id] for mol_id in mol_ids], mol_ids)
+    scores = ranking_func(conn, mol_ids)
+    scores, mol_ids = sort_two_lists([scores[mol_id] for mol_id in mol_ids], mol_ids, reverse=True)
     mol_ids = set(mol_ids[:ntop])
     mols = [mol for mol in mols if mol.GetProp('_Name') in mol_ids]
     return mols
 
 
-def sort_clusters(conn, clusters):
+def sort_clusters(conn, clusters, ranking_func):
     """
     Returns clusters with molecules filtered by properties and reordered according to docking scores
     :param conn: connection to docking DB
     :param clusters: tuple of tuples with mol ids in each cluster
     :return: list of lists with mol ids
     """
-    scores = get_mol_scores(conn, [mol_id for cluster in clusters for mol_id in cluster])
+    scores = ranking_func(conn, [mol_id for cluster in clusters for mol_id in cluster])
     output = []
     for cluster in clusters:
-        s, mol_ids = sort_two_lists([scores[mol_id] for mol_id in cluster], cluster)
+        s, mol_ids = sort_two_lists([scores[mol_id] for mol_id in cluster], cluster, reverse=True)
         output.append(mol_ids)
     return output
 
@@ -562,7 +574,7 @@ def get_last_iter_from_db(db_fname):
         return res + 1
 
 
-def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, max_logp, ntop, ncpu=1, **kwargs):
+def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, max_logp, ntop, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -579,12 +591,12 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, max_logp, 
     """
     if len(mols) == 0:
         return []
-    selected_mols = select_top_mols(mols, conn, ntop)
+    selected_mols = select_top_mols(mols, conn, ntop, ranking_func)
     res = __grow_mols(selected_mols, protein_pdbqt, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max_logp, ntop, ncpu=1, **kwargs):
+def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max_logp, ntop, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -603,7 +615,7 @@ def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max
     if len(mols) == 0:
         return []
     clusters = get_clusters_by_KMeans(mols, nclust)
-    sorted_clusters = sort_clusters(conn, clusters)
+    sorted_clusters = sort_clusters(conn, clusters, ranking_func)
     # select top n mols from each cluster
     selected_mols = []
     mol_ids = get_mol_ids(mols)
@@ -615,7 +627,7 @@ def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max
     return res
 
 
-def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, max_rtb, max_logp, ncpu=1, **kwargs):
+def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, max_rtb, max_logp, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -635,7 +647,7 @@ def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, m
         return []
     res = dict()
     clusters = get_clusters_by_KMeans(mols, nclust)
-    sorted_clusters = sort_clusters(conn, clusters)
+    sorted_clusters = sort_clusters(conn, clusters, ranking_func)
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))  # {mol_id: mol, ...}
@@ -809,9 +821,28 @@ def supply_parent_child_mols(d):
             n += 1
 
 
+def ranking_by_docking_score(conn, mol_ids):
+    scores = get_mol_scores(conn, mol_ids)
+    scores = {i: j * (-1) for i, j in scores.items()}
+    return scores
+
+
+def ranking_by_docking_score_qed(conn, mol_ids):
+    scores = get_mol_scores(conn, mol_ids)
+    qeds = get_mol_qeds(conn, mol_ids)
+    scores = {i: j * (-1) for i, j in scores.items()}
+    min_score, max_score = min(list(scores.values())), max(list(scores.values()))
+    stat_scores = {mol_id: ((scores[mol_id] - min_score) / (max_score - min_score) * qeds[mol_id]) for mol_id in
+                   mol_ids}
+    return stat_scores
+
+
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
                    ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
-                   plif_cutoff=1, prefix=None, **kwargs):
+                   plif_cutoff=1, prefix=None, ranking='1', **kwargs):
+
+    ranking_type = {'1': ranking_by_docking_score, '2': ranking_by_docking_score_qed}
+    ranking_func = ranking_type[ranking]
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
@@ -835,16 +866,19 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
             mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt,
-                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ncpu=ncpu, **kwargs)
+                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
+                                            ncpu=ncpu, **kwargs)
             elif alg_type in [2, 3] and len(mols) <= nclust:    # if number of mols is lower than nclust grow all mols
                 res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                   ncpu=ncpu, **kwargs)
             elif alg_type == 2:
                 res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
-                                                ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ncpu=ncpu, **kwargs)
+                                                ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
+                                                ncpu=ncpu, **kwargs)
             elif alg_type == 3:
                 res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
-                                           ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ncpu=ncpu, **kwargs)
+                                           ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
+                                           ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, logp=logp, protein_pdbqt=protein_pdbqt,
                                           ncpu=ncpu, **kwargs)
@@ -938,10 +972,15 @@ def main():
     parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
+    parser.add_argument('--ranking', choices=['1', '2'], required=True,
+                        help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
+                             '2 - ranking based on docking scores and QED.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
 
+
     args = parser.parse_args()
+
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
@@ -1001,7 +1040,8 @@ def main():
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
                                  use_dask=args.hostfile is not None, plif_list=args.plif,
-                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix)
+                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix,
+                                 ranking=args.ranking)
             make_docking = True
 
             if res:
