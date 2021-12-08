@@ -687,7 +687,7 @@ def identify_pareto(df):
     return population_ids[pareto_front].tolist()
 
 
-def selection_by_pareto(mols, conn, mw, rtb, logp, protein_pdbqt, ncpu, **kwargs):
+def selection_by_pareto(mols, conn, mw, rtb, logp, protein_pdbqt, ranking_func, ncpu, **kwargs):
     """
 
     :param mols:
@@ -702,14 +702,16 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, protein_pdbqt, ncpu, **kwargs
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
-    if len(mols) == 0:
+    if not mols:
         return []
     mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1 and MolLogP(mol) < logp]
     if not mols:
         return None
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))
-    scores = get_mol_scores(conn, mol_ids)
+    scores = ranking_func(conn, mol_ids)
+    # needed for inverting X-axis values, so the values are arranged from largest to smallest with a minus sign
+    scores = {i: j * (-1) for i, j in scores.items()}
     scores_mw = {mol_id: [score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
@@ -822,12 +824,24 @@ def supply_parent_child_mols(d):
 
 
 def ranking_by_docking_score(conn, mol_ids):
+    """
+
+    :param conn:
+    :param mol_ids:
+    :return: {mol_id: score}
+    """
     scores = get_mol_scores(conn, mol_ids)
     scores = {i: j * (-1) for i, j in scores.items()}
     return scores
 
 
 def ranking_by_docking_score_qed(conn, mol_ids):
+    """
+
+    :param conn:
+    :param mol_ids:
+    :return: dict {mol_id: score}
+    """
     scores = get_mol_scores(conn, mol_ids)
     qeds = get_mol_qeds(conn, mol_ids)
     scores = {i: j * (-1) for i, j in scores.items()}
@@ -881,7 +895,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
                                            ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, logp=logp, protein_pdbqt=protein_pdbqt,
-                                          ncpu=ncpu, **kwargs)
+                                          ranking_func=ranking_func, ncpu=ncpu, **kwargs)
 
     else:
         mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
