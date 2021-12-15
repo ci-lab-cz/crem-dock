@@ -257,13 +257,28 @@ def get_mol_scores(conn, mol_ids):
     return dict(cur.execute(sql, mol_ids))
 
 
+def get_corrected_mol_score(conn, mol_ids):
+    """
+    Returns dict of mol_id: score, where molecules with docking scores less than -20 are assigned a value of -20 and
+    docking scores, multiplied by -1
+    :param conn:
+    :param mol_ids:
+    :return:
+    """
+    scores = get_mol_scores(conn, mol_ids)
+    for mol_id, dock_score in scores.items():
+        scores[mol_id] = -20.0 if dock_score <= -20 else dock_score
+    scores = {i: j * (-1) for i, j in scores.items()}
+    return scores
+
+
 def get_mol_qeds(conn, mol_ids):
     """
-        Return dict of mol_id: qed
-        :param conn: connection to docking DB
-        :param mol_ids: list of mol ids
-        :return:
-        """
+    Returns dict of mol_id: qed
+    :param conn: connection to docking DB
+    :param mol_ids: list of mol ids
+    :return:
+    """
     cur = conn.cursor()
     sql = f'SELECT id, qed FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
     return dict(cur.execute(sql, mol_ids))
@@ -711,7 +726,6 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, protein_pdbqt, ranking_func, 
     mol_dict = dict(zip(mol_ids, mols))
     scores = ranking_func(conn, mol_ids)
     # needed for inverting X-axis values, so the values are arranged from largest to smallest with a minus sign
-    scores = {i: j * (-1) for i, j in scores.items()}
     scores_mw = {mol_id: [score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
@@ -841,8 +855,7 @@ def ranking_by_docking_score(conn, mol_ids):
     :param mol_ids:
     :return: {mol_id: score}
     """
-    scores = get_mol_scores(conn, mol_ids)
-    scores = {i: j * (-1) for i, j in scores.items()}
+    scores = get_corrected_mol_score(conn, mol_ids)
     return scores
 
 
@@ -853,9 +866,8 @@ def ranking_by_docking_score_qed(conn, mol_ids):
     :param mol_ids:
     :return: dict {mol_id: score}
     """
-    scores = get_mol_scores(conn, mol_ids)
+    scores = get_corrected_mol_score(conn, mol_ids)
     qeds = get_mol_qeds(conn, mol_ids)
-    scores = {i: j * (-1) for i, j in scores.items()}
     scale_scores = scale_min_max(scores)
     stat_scores = {mol_id: scale_scores[mol_id] * qeds[mol_id] for mol_id in scale_scores.keys()}
     return stat_scores
@@ -868,8 +880,7 @@ def ranking_by_num_heavy_atoms(conn, mol_ids):
     :param mol_ids:
     :return: dict {mol_id: score}
     """
-    scores = get_mol_scores(conn, mol_ids)
-    scores = {i: j * (-1) for i, j in scores.items()}
+    scores = get_corrected_mol_score(conn, mol_ids)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
     stat_scores = {mol_id: scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms() for mol_id in mol_ids}
     return stat_scores
@@ -882,8 +893,7 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     :param mol_ids:
     :return: dict {mol_id: score}
     """
-    scores = get_mol_scores(conn, mol_ids)
-    scores = {i: j * (-1) for i, j in scores.items()}
+    scores = get_corrected_mol_score(conn, mol_ids)
     qeds = get_mol_qeds(conn, mol_ids)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
     scores = {mol_id: scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms() for mol_id in mol_ids}
