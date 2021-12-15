@@ -823,9 +823,20 @@ def supply_parent_child_mols(d):
             n += 1
 
 
+def scale_min_max(scores):
+    """
+    translation of values into a range from 0 to 1
+    :param scores:
+    :return:
+    """
+    min_score, max_score = min(scores.values()), max(scores.values())
+    scale_scores = {mol_id: (scores[mol_id] - min_score) / (max_score - min_score) for mol_id in scores.keys()}
+    return scale_scores
+
+
 def ranking_by_docking_score(conn, mol_ids):
     """
-
+    invert docking scores of molecules
     :param conn:
     :param mol_ids:
     :return: {mol_id: score}
@@ -837,7 +848,7 @@ def ranking_by_docking_score(conn, mol_ids):
 
 def ranking_by_docking_score_qed(conn, mol_ids):
     """
-
+    scoring for molecule is calculated by the formula: docking score after scaling * QED
     :param conn:
     :param mol_ids:
     :return: dict {mol_id: score}
@@ -845,38 +856,46 @@ def ranking_by_docking_score_qed(conn, mol_ids):
     scores = get_mol_scores(conn, mol_ids)
     qeds = get_mol_qeds(conn, mol_ids)
     scores = {i: j * (-1) for i, j in scores.items()}
-    min_score, max_score = min(list(scores.values())), max(list(scores.values()))
-    stat_scores = {mol_id: ((scores[mol_id] - min_score) / (max_score - min_score) * qeds[mol_id]) for mol_id in
-                   mol_ids}
+    scale_scores = scale_min_max(scores)
+    stat_scores = {mol_id: scale_scores[mol_id] * qeds[mol_id] for mol_id in scale_scores.keys()}
     return stat_scores
 
 
 def ranking_by_num_heavy_atoms(conn, mol_ids):
+    """
+    scoring for molecule is calculated by the formula: docking score / number heavy atoms
+    :param conn:
+    :param mol_ids:
+    :return: dict {mol_id: score}
+    """
     scores = get_mol_scores(conn, mol_ids)
     scores = {i: j * (-1) for i, j in scores.items()}
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
-    stat_scores = {mol_id: (scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms()) for mol_id in
-                   mol_ids}
+    stat_scores = {mol_id: scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms() for mol_id in mol_ids}
     return stat_scores
 
 
 def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
+    """
+    scoring is calculated by the formula: docking score / number heavy atoms * QED
+    :param conn:
+    :param mol_ids:
+    :return: dict {mol_id: score}
+    """
     scores = get_mol_scores(conn, mol_ids)
     scores = {i: j * (-1) for i, j in scores.items()}
     qeds = get_mol_qeds(conn, mol_ids)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
-    stat_scores = {mol_id: ((scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms()) * qeds[mol_id]) for mol_id in
-                   mol_ids}
+    scores = {mol_id: scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms() for mol_id in mol_ids}
+    scale_scores = scale_min_max(scores)
+    stat_scores = {mol_id: (scale_scores[mol_id] * qeds[mol_id]) for mol_id in mol_ids}
     return stat_scores
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
                    ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
-                   plif_cutoff=1, prefix=None, ranking='1', **kwargs):
+                   plif_cutoff=1, prefix=None, ranking_func=1, **kwargs):
 
-    ranking_type = {'1': ranking_by_docking_score, '2': ranking_by_docking_score_qed,
-                    '3': ranking_by_num_heavy_atoms, '4': ranking_by_num_heavy_atoms_qed}
-    ranking_func = ranking_type[ranking]
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
@@ -1006,7 +1025,7 @@ def main():
     parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
-    parser.add_argument('--ranking', choices=['1', '2', '3', '4'], required=True,
+    parser.add_argument('--ranking', choices=[1, 2, 3, 4], required=True, type=int,
                         help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
                              '2 - ranking based on docking scores and QED, 3 - ranking based on docking score/number heavy atoms of molecule,'
                              '4 - raking based on docking score/number heavy atoms of molecule * QED')
@@ -1015,6 +1034,12 @@ def main():
 
 
     args = parser.parse_args()
+
+
+    ranking_types = {1: ranking_by_docking_score, 2: ranking_by_docking_score_qed,
+                    3: ranking_by_num_heavy_atoms, 4: ranking_by_num_heavy_atoms_qed}
+
+    ranking_func = ranking_types[args.ranking]
 
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
@@ -1076,7 +1101,7 @@ def main():
                                  max_replacements=args.max_replacements, protonation=not args.no_protonation,
                                  use_dask=args.hostfile is not None, plif_list=args.plif,
                                  plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix,
-                                 ranking=args.ranking)
+                                 ranking_func=ranking_func)
             make_docking = True
 
             if res:
