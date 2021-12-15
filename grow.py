@@ -851,11 +851,31 @@ def ranking_by_docking_score_qed(conn, mol_ids):
     return stat_scores
 
 
+def ranking_by_num_heavy_atoms(conn, mol_ids):
+    scores = get_mol_scores(conn, mol_ids)
+    scores = {i: j * (-1) for i, j in scores.items()}
+    mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
+    stat_scores = {mol_id: (scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms()) for mol_id in
+                   mol_ids}
+    return stat_scores
+
+
+def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
+    scores = get_mol_scores(conn, mol_ids)
+    scores = {i: j * (-1) for i, j in scores.items()}
+    qeds = get_mol_qeds(conn, mol_ids)
+    mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
+    stat_scores = {mol_id: ((scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms()) * qeds[mol_id]) for mol_id in
+                   mol_ids}
+    return stat_scores
+
+
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
                    ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
                    plif_cutoff=1, prefix=None, ranking='1', **kwargs):
 
-    ranking_type = {'1': ranking_by_docking_score, '2': ranking_by_docking_score_qed}
+    ranking_type = {'1': ranking_by_docking_score, '2': ranking_by_docking_score_qed,
+                    '3': ranking_by_num_heavy_atoms, '4': ranking_by_num_heavy_atoms_qed}
     ranking_func = ranking_type[ranking]
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -986,9 +1006,10 @@ def main():
     parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
-    parser.add_argument('--ranking', choices=['1', '2'], required=True,
+    parser.add_argument('--ranking', choices=['1', '2', '3', '4'], required=True,
                         help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
-                             '2 - ranking based on docking scores and QED.')
+                             '2 - ranking based on docking scores and QED, 3 - ranking based on docking score/number heavy atoms of molecule,'
+                             '4 - raking based on docking score/number heavy atoms of molecule * QED')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
 
