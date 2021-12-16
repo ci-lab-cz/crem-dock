@@ -915,7 +915,7 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
-                   ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
+                   ranking, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
                    plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -938,6 +938,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
             sys.stderr.write(f'iteration {iteration}: no molecules were selected for growing.\n')
         else:
             mols = get_mols(conn, mol_data.index)
+            ranking_func = ranking_type(ranking)
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt,
                                             ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
@@ -1110,7 +1111,7 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, alg_type=args.algorithm,
-                                 ranking_func=args.ranking, ncpu=args.ncpu, make_docking=make_docking, db_name=args.db,
+                                 ranking=args.ranking, ncpu=args.ncpu, make_docking=make_docking, db_name=args.db,
                                  radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
                                  max_atoms=args.max_atoms, max_replacements=args.max_replacements,
                                  protonation=not args.no_protonation, use_dask=args.hostfile is not None,
