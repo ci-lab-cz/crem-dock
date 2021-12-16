@@ -903,8 +903,8 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
-                   ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
-                   plif_cutoff=1, prefix=None, ranking_func=1, **kwargs):
+                   ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
+                   plif_cutoff=1, prefix=None, **kwargs):
 
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -1106,12 +1106,11 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, alg_type=args.algorithm,
-                                 ncpu=args.ncpu, make_docking=make_docking, db_name=args.db, radius=args.radius,
-                                 min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, protonation=not args.no_protonation,
-                                 use_dask=args.hostfile is not None, plif_list=args.plif,
-                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix,
-                                 ranking_func=ranking_func)
+                                 ranking_func=ranking_func, ncpu=args.ncpu, make_docking=make_docking, db_name=args.db,
+                                 radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
+                                 max_atoms=args.max_atoms, max_replacements=args.max_replacements,
+                                 protonation=not args.no_protonation, use_dask=args.hostfile is not None, plif_list=args.plif,
+                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix)
             make_docking = True
 
             if res:
