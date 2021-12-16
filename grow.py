@@ -48,6 +48,18 @@ def str_lower_type(x):
         return x
 
 
+def ranking_type(x):
+    ranking_types = {1: ranking_by_docking_score,
+                     2: ranking_by_docking_score_qed,
+                     3: ranking_by_num_heavy_atoms,
+                     4: ranking_by_num_heavy_atoms_qed}
+    try:
+        return ranking_types[x]
+    except KeyError:
+        sys.stderr.write(f'Wrong type of a ranking function was passed: {x}\n')
+        raise
+
+
 def similarity_value_type(x):
     return max(0, min(1, float(x)))
 
@@ -1007,6 +1019,11 @@ def main():
                              'clustering (algorithms 2 and 3).')
     parser.add_argument('--nclust', type=int, default=20, required=False,
                         help='the number of KMeans clusters to consider for molecule selection.')
+    parser.add_argument('--ranking', choices=[1, 2, 3, 4], required=True, type=int, default=1,
+                        help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
+                             '2 - ranking based on docking scores and QED, '
+                             '3 - ranking based on docking score/number heavy atoms of molecule,'
+                             '4 - raking based on docking score/number heavy atoms of molecule and QED')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--mw', default=450, type=float,
@@ -1035,22 +1052,10 @@ def main():
     parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
-    parser.add_argument('--ranking', choices=[1, 2, 3, 4], required=True, type=int,
-                        help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
-                             '2 - ranking based on docking scores and QED, 3 - ranking based on docking score/number heavy atoms of molecule,'
-                             '4 - raking based on docking score/number heavy atoms of molecule * QED')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
 
-
     args = parser.parse_args()
-
-
-    ranking_types = {1: ranking_by_docking_score, 2: ranking_by_docking_score_qed,
-                    3: ranking_by_num_heavy_atoms, 4: ranking_by_num_heavy_atoms_qed}
-
-    ranking_func = ranking_types[args.ranking]
-
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
@@ -1106,11 +1111,12 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, alg_type=args.algorithm,
-                                 ranking_func=ranking_func, ncpu=args.ncpu, make_docking=make_docking, db_name=args.db,
+                                 ranking_func=args.ranking, ncpu=args.ncpu, make_docking=make_docking, db_name=args.db,
                                  radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
                                  max_atoms=args.max_atoms, max_replacements=args.max_replacements,
-                                 protonation=not args.no_protonation, use_dask=args.hostfile is not None, plif_list=args.plif,
-                                 plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff, prefix=args.prefix)
+                                 protonation=not args.no_protonation, use_dask=args.hostfile is not None,
+                                 plif_list=args.plif, plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff,
+                                 prefix=args.prefix)
             make_docking = True
 
             if res:
