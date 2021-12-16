@@ -1008,7 +1008,7 @@ def main():
     parser.add_argument('--no_protonation', action='store_true', default=False,
                         help='disable protonation of molecules before docking. Protonation requires installed '
                              'cxcalc chemaxon utility.')
-    parser.add_argument('-t', '--algorithm', default=2, type=int,
+    parser.add_argument('-t', '--algorithm', default=2, type=int, choices=[1, 2, 3, 4],
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
                              'molecules from a cluster cannot be grown they will be replaced with new lower scored '
                              'ones), 3 - clustering, 4 - Pareto front (MW vs. docking score).')
@@ -1018,7 +1018,7 @@ def main():
                              'clustering (algorithms 2 and 3).')
     parser.add_argument('--nclust', type=int, default=20, required=False,
                         help='the number of KMeans clusters to consider for molecule selection.')
-    parser.add_argument('--ranking', required=False, type=ranking_type, default=1,
+    parser.add_argument('--ranking', required=False, type=int, default=1, choices=[1, 2, 3, 4],
                         help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
                              '2 - ranking based on docking scores and QED, '
                              '3 - ranking based on docking score/number heavy atoms of molecule,'
@@ -1110,8 +1110,8 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, alg_type=args.algorithm,
-                                 ranking_func=args.ranking, ncpu=args.ncpu, make_docking=make_docking, db_name=args.db,
-                                 radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
+                                 ranking_func=ranking_type(args.ranking), ncpu=args.ncpu, make_docking=make_docking,
+                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
                                  max_atoms=args.max_atoms, max_replacements=args.max_replacements,
                                  protonation=not args.no_protonation, use_dask=args.hostfile is not None,
                                  plif_list=args.plif, plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff,
