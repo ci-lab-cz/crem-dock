@@ -915,9 +915,8 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
-                   ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None, plif_protein=None,
-                   plif_cutoff=1, prefix=None, **kwargs):
-
+                   ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
+                   plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
@@ -1009,7 +1008,7 @@ def main():
     parser.add_argument('--no_protonation', action='store_true', default=False,
                         help='disable protonation of molecules before docking. Protonation requires installed '
                              'cxcalc chemaxon utility.')
-    parser.add_argument('-t', '--algorithm', default=1, type=int,
+    parser.add_argument('-t', '--algorithm', default=2, type=int,
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
                              'molecules from a cluster cannot be grown they will be replaced with new lower scored '
                              'ones), 3 - clustering, 4 - Pareto front (MW vs. docking score).')
