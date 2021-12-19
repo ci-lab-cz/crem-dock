@@ -11,7 +11,7 @@ import tempfile
 import traceback
 from collections import defaultdict
 from functools import partial
-from multiprocessing import cpu_count, Pool
+from multiprocessing import Pool
 
 import dask
 import numpy as np
@@ -28,24 +28,7 @@ from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
 
 from scripts import Docking, plif
-
-
-def cpu_type(x):
-    return max(1, min(int(x), cpu_count()))
-
-
-def filepath_type(x):
-    if x:
-        return os.path.abspath(x)
-    else:
-        return x
-
-
-def str_lower_type(x):
-    if x:
-        return x.lower()
-    else:
-        return x
+from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
 
 def ranking_type(x):
@@ -58,10 +41,6 @@ def ranking_type(x):
     except KeyError:
         sys.stderr.write(f'Wrong type of a ranking function was passed: {x}\n')
         raise
-
-
-def similarity_value_type(x):
-    return max(0, min(1, float(x)))
 
 
 def sort_two_lists(primary, secondary, reverse=False):

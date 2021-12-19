@@ -7,7 +7,7 @@ from collections import defaultdict
 from functools import partial
 from multiprocessing import Pool
 
-from grow import filepath_type, cpu_type
+from arg_types import filepath_type, cpu_type
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
