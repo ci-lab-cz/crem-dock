@@ -179,6 +179,7 @@ def iter_docking(dbname, table_name, receptor_pdbqt_fname, protein_setup, proton
     This function should update output db with docked poses and scores. Docked poses should be stored as pdbqt (source)
     and mol block. All other post-processing will be performed separately.
     :param dbname:
+    :param table_name:
     :param receptor_pdbqt_fname:
     :param protein_setup:
     :param protonation: True or False
