@@ -987,7 +987,7 @@ def tautomer_refinement(conn, ncpu):
     with Pool(ncpu) as p:
         canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
     data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
-                     if hash(smi) != hash(canon_smi)]
+                     if smi != canon_smi]
 
     if data:
         create_table(conn)
