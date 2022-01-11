@@ -531,6 +531,19 @@ def create_db(fname):
              protected_user_canon_ids TEXT DEFAULT NULL,
              time TEXT
             )""")
+    cur.execute("""CREATE TABLE IF NOT EXISTS tautomers
+            (
+             id TEXT PRIMARY KEY,
+             smi TEXT NOT NULL UNIQUE,
+             smi_protonated TEXT,
+             docking_score REAL,
+             rmsd REAL,
+             plif_sim REAL,
+             pdb_block TEXT,
+             mol_block TEXT,
+             time TEXT,
+             duplicate TEXT
+            )""")
     conn.commit()
     conn.close()
 
@@ -920,30 +933,6 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     return stat_scores
 
 
-def create_table(conn):
-    """
-    creating a table of tautomers for results
-    :param conn:
-    :return:
-    """
-    cur = conn.cursor()
-    cur.execute("""CREATE TABLE IF NOT EXISTS tautomers
-                (
-                 id TEXT PRIMARY KEY,
-                 smi TEXT NOT NULL UNIQUE,
-                 smi_protonated TEXT,
-                 docking_score REAL,
-                 rmsd REAL,
-                 plif_sim REAL,
-                 pdb_block TEXT,
-                 mol_block TEXT,
-                 time TEXT,
-                 duplicate TEXT
-                )""")
-    conn.commit()
-    # conn.close()
-
-
 def insert_data_duplicate(conn):
     """
     adding docking scores values from the table "mols" for tautomers
@@ -1010,8 +999,7 @@ def tautomer_refinement(conn, ncpu):
     data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
                      if smi != canon_smi]
 
-    if data:
-        create_table(conn)
+
 
     cols = ['id', 'smi']
     insert_db(conn, 'tautomers', data, cols) ## table = tautomers
