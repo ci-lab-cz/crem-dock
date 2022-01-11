@@ -90,19 +90,19 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def add_protonation(conn, iteration):
+def add_protonation(conn, table_name):
     '''
     Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
     Parse output and update db.
     :param conn:
-    :param iteration:
+    :param table_name:
     :return:
     '''
     cur = conn.cursor()
-    smiles_list = list(cur.execute(f"SELECT smi, id FROM mols WHERE iteration = {iteration - 1} AND "
+    smiles_list = list(cur.execute(f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND "
                                    f"smi_protonated is NULL"))
     if not smiles_list:
-        sys.stderr.write(f'no molecules to protonate in iteration {iteration}\n')
+        sys.stderr.write('no molecules to protonate in database\n')
         return
 
     smiles, mol_ids = zip(*smiles_list)
@@ -119,7 +119,7 @@ def add_protonation(conn, iteration):
             os.remove(output)
 
     for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
-        cur.execute("""UPDATE mols
+        cur.execute(f"""UPDATE {table_name}
                        SET smi_protonated = ?
                        WHERE
                            id = ?
@@ -127,47 +127,52 @@ def add_protonation(conn, iteration):
     conn.commit()
 
 
-def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
+def update_db(conn, table_name, plif_ref=None, plif_protein_fname=None, ncpu=1):
     """
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
     :param conn: connection to docking DB
-    :param iteration: current iteration
     :param plif_ref: list of reference interactions (str)
     :param plif_protein_fname: PDB file with a protein containing all hydrogens to calc plif
     :param ncpu: number of cpu cores
     :return:
     """
     cur = conn.cursor()
+    if table_name == 'mols':
+        iteration = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0] + 1
+        mol_ids = get_docked_mol_ids(conn, iteration)
+        mols = get_mols(conn, mol_ids)
+        # parent_ids and parent_mols can be empty if all compounds do not have parents
+        parent_ids = dict(cur.execute(f"SELECT id, parent_id "
+                                      f"FROM mols "
+                                      f"WHERE id IN ({','.join('?' * len(mol_ids))}) AND "
+                                      f"parent_id IS NOT NULL", mol_ids))
+        uniq_parent_ids = list(set(parent_ids.values()))
+        parent_mols = get_mols(conn, uniq_parent_ids)
+        parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
-    mol_ids = get_docked_mol_ids(conn, iteration)
-    mols = get_mols(conn, mol_ids)
-    # parent_ids and parent_mols can be empty if all compounds do not have parents
-    parent_ids = dict(cur.execute(f"SELECT id, parent_id "
-                                  f"FROM mols "
-                                  f"WHERE id IN ({','.join('?' * len(mol_ids))}) AND "
-                                  f"parent_id IS NOT NULL", mol_ids))
-    uniq_parent_ids = list(set(parent_ids.values()))
-    parent_mols = get_mols(conn, uniq_parent_ids)
-    parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
+        # update rmsd
+        for mol in mols:
+            rms = None
+            mol_id = mol.GetProp('_Name')
+            try:
+                parent_mol = parent_mols[parent_ids[mol_id]]
+                rms = get_rmsd(mol, parent_mol)
+            except KeyError:  # missing parent mol
+                pass
 
-    # update rmsd
-    for mol in mols:
-        rms = None
-        mol_id = mol.GetProp('_Name')
-        try:
-            parent_mol = parent_mols[parent_ids[mol_id]]
-            rms = get_rmsd(mol, parent_mol)
-        except KeyError:  # missing parent mol
-            pass
-
-        cur.execute("""UPDATE mols
-                           SET 
-                               rmsd = ? 
-                           WHERE
-                               id = ?
-                        """, (rms, mol_id))
-    conn.commit()
+            cur.execute("""UPDATE mols
+                               SET 
+                                   rmsd = ? 
+                               WHERE
+                                   id = ?
+                            """, (rms, mol_id))
+        conn.commit()
+    else:
+        mol_ids = list(cur.execute(f"SELECT id FROM tautomers WHERE mol_block IS NOT NULL"))
+        mol_ids = [i[0] for i in mol_ids]
+        sql = cur.execute(f'SELECT mol_block FROM tautomers WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids)
+        mols = [Chem.MolFromMolBlock(item[0], removeHs=False) for item in sql]
 
     # update plif
     if plif_ref is not None:
@@ -178,7 +183,7 @@ def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
                                                        plif_protein_fname=plif_protein_fname,
                                                        plif_ref_df=ref_df),
                                                mols):
-            cur.execute("""UPDATE mols
+            cur.execute(f"""UPDATE {table_name}
                                SET 
                                    plif_sim = ? 
                                WHERE
@@ -486,15 +491,15 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, h_dist_threshold
     return res
 
 
-def insert_db(conn, data, cols=None):
+def insert_db(conn, table_name, data, cols=None):
     if data:
         cur = conn.cursor()
         ncols = len(data[0])
         if cols is None:
-            cur.executemany(f"INSERT OR IGNORE INTO mols VAlUES({','.join('?' * ncols)})", data)
+            cur.executemany(f"INSERT OR IGNORE INTO {table_name} VAlUES({','.join('?' * ncols)})", data)
         else:
             cols = ', '.join(cols)
-            cur.executemany(f"INSERT OR IGNORE INTO mols ({cols}) VAlUES({','.join('?' * ncols)})", data)
+            cur.executemany(f"INSERT OR IGNORE INTO {table_name} ({cols}) VAlUES({','.join('?' * ncols)})", data)
         conn.commit()
 
 
@@ -583,7 +588,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
-        insert_db(conn, data, cols)
+        insert_db(conn, 'mols', data, cols)
     finally:
         conn.close()
     return make_docking
@@ -914,6 +919,105 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     return stat_scores
 
 
+def create_table(conn):
+    """
+    creating a table of tautomers for results
+    :param conn:
+    :return:
+    """
+    cur = conn.cursor()
+    cur.execute("""CREATE TABLE IF NOT EXISTS tautomers
+                (
+                 id TEXT PRIMARY KEY,
+                 smi TEXT NOT NULL UNIQUE,
+                 smi_protonated TEXT,
+                 docking_score REAL,
+                 rmsd REAL,
+                 plif_sim REAL,
+                 pdb_block TEXT,
+                 mol_block TEXT,
+                 time TEXT,
+                 duplicate TEXT
+                )""")
+    conn.commit()
+    # conn.close()
+
+
+def insert_data_duplicate(conn):
+    """
+    adding docking scores values from the table "mols" for tautomers
+    :param conn:
+    :return:
+    """
+    cur = conn.cursor()
+    ids_duplicate = list(cur.execute("SELECT duplicate FROM tautomers WHERE duplicate is NOT NULL"))
+    ids_duplicate = [i[0] for i in ids_duplicate]
+    data = get_mol_scores(conn, ids_duplicate)
+    for ids, docking_score in data.items():
+        cur.execute("""UPDATE tautomers
+                           SET 
+                                docking_score = ? 
+                           WHERE
+                               duplicate = ?
+                        """, (docking_score, ids))
+    conn.commit()
+
+
+
+def find_duplicate(data, smiles_dict, conn):
+    """
+    find duplicates between the most stable tautomers and molecules from table "mols" and adding ids for this molecules
+    in table "tautomers"
+    :param data:
+    :param smiles_dict:
+    :param conn:
+    :return:
+    """
+    duplicates = {}
+    for i in data:
+        if i[1] in smiles_dict.keys():
+            duplicates[i[0]] = smiles_dict[i[1]]
+    cur = conn.cursor()
+    for key, value in duplicates.items():
+        cur.execute("""UPDATE tautomers
+                           SET 
+                                duplicate = ? 
+                           WHERE
+                               id = ?
+                        """, (value, key))
+    conn.commit()
+
+
+def tautomer_refinement(conn, ncpu):
+    cur = conn.cursor()
+    smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
+    smiles, mol_ids = zip(*iter(smiles_dict.items()))
+
+    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+        fd, output = tempfile.mkstemp()
+        try:
+            tmp.writelines(['\n'.join(smiles)])
+            tmp.flush()
+            cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
+            subprocess.call(cmd_run, shell=True)
+            stable_tautomers = open(output).read().split('\n')[:-1]
+        finally:
+            os.remove(output)
+
+    with Pool(ncpu) as p:
+        canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
+    data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
+                     if hash(smi) != hash(canon_smi)]
+
+    if data:
+        create_table(conn)
+
+    cols = ['id', 'smi']
+    insert_db(conn, 'tautomers', data, cols) ## table = tautomers
+    find_duplicate(data, smiles_dict, conn)
+    insert_data_duplicate(conn)
+
+
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
                    ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
                    plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
@@ -921,11 +1025,11 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
     if protonation:
-        add_protonation(conn, iteration)
+        add_protonation(conn=conn, table_name='mols')
     if make_docking:
-        Docking.iter_docking(dbname=dbname, receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, iteration=iteration, use_dask=use_dask, ncpu=ncpu)
-        update_db(conn, iteration, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
+        Docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+                             protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+        update_db(conn, table_name='mols', plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
@@ -968,11 +1072,18 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
                            supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
-        insert_db(conn, data)
+        insert_db(conn, table_name='mols', data=data)
         return True
 
     else:
         sys.stderr.write('Growth has stopped\n')
+        conn = sqlite3.connect(dbname)
+        # tautomer_refinement(conn=conn, ncpu=ncpu)
+        # if protonation:
+        #     add_protonation(conn=conn, table_name='tautomers')
+        # Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+        #                      protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+        update_db(conn, table_name='tautomers', plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
         return False
 
 
