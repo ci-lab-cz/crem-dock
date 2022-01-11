@@ -140,11 +140,11 @@ def pdbqt2molblock(pdbqt_block, smi, mol_id):
     return mol_block
 
 
-def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbname, ncpu, lock=None):
+def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbname, table_name, ncpu, lock=None):
 
-    def insert_data(dbname, pdbqt_out, score, mol_block, mol_id):
+    def insert_data(dbname, table_name, pdbqt_out, score, mol_block, mol_id):
         with sqlite3.connect(dbname) as conn:
-            conn.execute("""UPDATE mols
+            conn.execute(f"""UPDATE {table_name}
                                SET pdb_block = ?,
                                    docking_score = ?,
                                    mol_block = ?,
@@ -166,15 +166,15 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
 
     if lock is not None:  # multiprocessing
         with lock:
-            insert_data(dbname, pdbqt_out, score, mol_block, mol_id)
+            insert_data(dbname, table_name, pdbqt_out, score, mol_block, mol_id)
     else:  # dask
         with daskLock(dbname):
-            insert_data(dbname, pdbqt_out, score, mol_block, mol_id)
+            insert_data(dbname, table_name, pdbqt_out, score, mol_block, mol_id)
 
     return mol_id
 
 
-def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, iteration, ncpu, use_dask):
+def iter_docking(dbname, table_name, receptor_pdbqt_fname, protein_setup, protonation, ncpu, use_dask):
     '''
     This function should update output db with docked poses and scores. Docked poses should be stored as pdbqt (source)
     and mol block. All other post-processing will be performed separately.
@@ -182,7 +182,6 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
     :param receptor_pdbqt_fname:
     :param protein_setup:
     :param protonation: True or False
-    :param iteration: int
     :param ncpu: int
     :param use_dask: indicate whether or not using dask cluster
     :type use_dask: bool
@@ -204,9 +203,15 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
     with sqlite3.connect(dbname) as conn:
         cur = conn.cursor()
         smi_field_name = 'smi_protonated' if protonation else 'smi'
-        smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} "
-                                       f"FROM mols "
-                                       f"WHERE iteration = {iteration - 1} AND docking_score IS NULL"))
+        if table_name == 'mols':
+            iteration = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0]
+            smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} "
+                                           f"FROM mols "
+                                           f"WHERE iteration = {iteration} AND docking_score IS NULL"))
+        else:
+            smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} "
+                                           f"FROM {table_name} "
+                                           f"WHERE docking_score IS NULL"))
     if not smiles_dict:
         return
 
@@ -218,7 +223,7 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
         b = bag.from_sequence(smiles_dict.items(), npartitions=len(smiles_dict))
         for i, mol_id in enumerate(b.starmap(process_mol_docking,
                                              receptor_pdbqt_fname=receptor_pdbqt_fname,
-                                             center=center, box_size=box_size, dbname=dbname, ncpu=1).compute(),
+                                             center=center, box_size=box_size, dbname=dbname, table_name=table_name, ncpu=1).compute(),
                                    1):
             if i % 100 == 0:
                 sys.stderr.write(f'\r{i} molecules were docked')
@@ -229,9 +234,9 @@ def iter_docking(dbname, receptor_pdbqt_fname, protein_setup, protonation, itera
         manager = Manager()
         lock = manager.Lock()
         i = 0
-        for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking, dbname=dbname,
+        for i, mol_id in enumerate(pool.starmap(partial(process_mol_docking,
                                                         receptor_pdbqt_fname=receptor_pdbqt_fname,
-                                                        center=center, box_size=box_size,
+                                                        center=center, box_size=box_size, dbname=dbname, table_name=table_name,
                                                         ncpu=1, lock=lock),
                                                 smiles_dict.items()), 1):
             if i % 100 == 0:
