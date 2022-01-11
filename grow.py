@@ -132,6 +132,7 @@ def update_db(conn, table_name, plif_ref=None, plif_protein_fname=None, ncpu=1):
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
     :param conn: connection to docking DB
+    :param table_name: mols or tautomers
     :param plif_ref: list of reference interactions (str)
     :param plif_protein_fname: PDB file with a protein containing all hydrogens to calc plif
     :param ncpu: number of cpu cores
