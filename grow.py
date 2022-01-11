@@ -980,7 +980,7 @@ def tautomer_refinement(conn, ncpu):
             tmp.flush()
             cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
-            stable_tautomers = open(output).read().split('\n')[:-1]
+            stable_tautomers = open(output).read().split('\n')
         finally:
             os.remove(output)
 
