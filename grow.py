@@ -151,8 +151,8 @@ def update_db(conn, table_name, plif_ref=None, plif_protein_fname=None, ncpu=1):
     else:
         mol_ids = list(cur.execute(f"SELECT id FROM tautomers WHERE mol_block IS NOT NULL"))
         mol_ids = [i[0] for i in mol_ids]
-        sql = cur.execute(f'SELECT mol_block FROM tautomers WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids)
-        mols = [Chem.MolFromMolBlock(item[0], removeHs=False) for item in sql]
+        mols = get_mols(conn, mol_ids, table_name='tautomers')
+
 
     # update plif
     if plif_ref is not None:
@@ -220,24 +220,29 @@ def get_docked_mol_data(conn, iteration):
     return df
 
 
-def get_mols(conn, mol_ids):
+def get_mols(conn, mol_ids, table_name='mols'):
     """
     Returns list of Mol objects from docking DB, order is arbitrary, molecules with errors will be silently skipped
     :param conn: connection to docking DB
     :param mol_ids: list of molecules to retrieve
+    :param table_name: mols or tautomers
     :return:
     """
     cur = conn.cursor()
-    sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-    mols = []
-    for items in cur.execute(sql, mol_ids):
-        m = Chem.MolFromMolBlock(items[0], removeHs=False)
-        Chem.AssignAtomChiralTagsFromStructure(m)
-        if not m:
-            continue
-        if items[1] is not None:
-            m.SetProp('protected_user_canon_ids', items[1])
-        mols.append(m)
+    if table_name == 'tautomers':
+        sql = cur.execute(f'SELECT mol_block FROM tautomers WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids)
+        mols = [Chem.MolFromMolBlock(item[0], removeHs=False) for item in sql]
+    elif table_name == 'mols':
+        sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+        mols = []
+        for items in cur.execute(sql, mol_ids):
+            m = Chem.MolFromMolBlock(items[0], removeHs=False)
+            Chem.AssignAtomChiralTagsFromStructure(m)
+            if not m:
+                continue
+            if items[1] is not None:
+                m.SetProp('protected_user_canon_ids', items[1])
+            mols.append(m)
     cur.close()
     return mols
 
