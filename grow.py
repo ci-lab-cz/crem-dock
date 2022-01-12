@@ -148,7 +148,7 @@ def update_db(conn, table_name, plif_ref=None, plif_protein_fname=None, ncpu=1):
                                    id = ?
                             """, (rms, mol_id))
         conn.commit()
-    else:
+    elif table_name == 'tautomers':
         mol_ids = list(cur.execute(f"SELECT id FROM tautomers WHERE mol_block IS NOT NULL"))
         mol_ids = [i[0] for i in mol_ids]
         mols = get_mols(conn, mol_ids, table_name='tautomers')
