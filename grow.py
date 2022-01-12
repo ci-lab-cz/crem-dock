@@ -933,51 +933,6 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     return stat_scores
 
 
-def insert_data_duplicate(conn):
-    """
-    adding docking scores values from the table "mols" for tautomers
-    :param conn:
-    :return:
-    """
-    cur = conn.cursor()
-    ids_duplicate = list(cur.execute("SELECT duplicate FROM tautomers WHERE duplicate is NOT NULL"))
-    ids_duplicate = [i[0] for i in ids_duplicate]
-    data = get_mol_scores(conn, ids_duplicate)
-    for ids, docking_score in data.items():
-        cur.execute("""UPDATE tautomers
-                           SET 
-                                docking_score = ? 
-                           WHERE
-                               duplicate = ?
-                        """, (docking_score, ids))
-    conn.commit()
-
-
-
-def find_duplicate(data, smiles_dict, conn):
-    """
-    find duplicates between the most stable tautomers and molecules from table "mols" and adding ids for this molecules
-    in table "tautomers"
-    :param data:
-    :param smiles_dict:
-    :param conn:
-    :return:
-    """
-    duplicates = {}
-    for i in data:
-        if i[1] in smiles_dict.keys():
-            duplicates[i[0]] = smiles_dict[i[1]]
-    cur = conn.cursor()
-    for key, value in duplicates.items():
-        cur.execute("""UPDATE tautomers
-                           SET 
-                                duplicate = ? 
-                           WHERE
-                               id = ?
-                        """, (value, key))
-    conn.commit()
-
-
 def tautomer_refinement(conn, ncpu):
     cur = conn.cursor()
     smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
@@ -999,13 +954,19 @@ def tautomer_refinement(conn, ncpu):
     data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
                      if smi != canon_smi]
 
-
-
     cols = ['id', 'smi']
-    insert_db(conn, 'tautomers', data, cols) ## table = tautomers
-    find_duplicate(data, smiles_dict, conn)
-    insert_data_duplicate(conn)
+    insert_db(conn, 'tautomers', data, cols)
 
+    cur.execute("""UPDATE tautomers
+                       SET 
+                          docking_score = mols.docking_score,
+                          duplicate = mols.id
+                       FROM
+                          mols
+                       WHERE
+                           mols.smi = tautomers.smi
+                    """)
+    conn.commit()
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
                    ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
