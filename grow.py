@@ -959,8 +959,9 @@ def tautomer_refinement(conn, ncpu):
     data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
                      if smi != canon_smi]
 
-    cols = ['id', 'smi']
-    insert_db(conn, 'tautomers', data, cols)
+    if data:
+        cols = ['id', 'smi']
+        insert_db(conn, 'tautomers', data, cols)
 
     cur.execute("""UPDATE tautomers
                        SET 
