@@ -69,7 +69,7 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def add_protonation(conn, table_name):
+def add_protonation(conn, table_name='mols'):
     '''
     Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
     Parse output and update db.
@@ -106,7 +106,7 @@ def add_protonation(conn, table_name):
     conn.commit()
 
 
-def update_db(conn, table_name, plif_ref=None, plif_protein_fname=None, ncpu=1):
+def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='mols'):
     """
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
@@ -478,7 +478,7 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, h_dist_threshold
     return res
 
 
-def insert_db(conn, table_name, data, cols=None):
+def insert_db(conn, data, cols=None, table_name='mols'):
     if data:
         cur = conn.cursor()
         ncols = len(data[0])
@@ -588,7 +588,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
-        insert_db(conn, 'mols', data, cols)
+        insert_db(conn, data, cols)
     finally:
         conn.close()
     return make_docking
@@ -942,7 +942,7 @@ def tautomer_refinement(conn, ncpu):
 
     if data:
         cols = ['id', 'smi']
-        insert_db(conn, 'tautomers', data, cols)
+        insert_db(conn, data, cols, table_name='tautomers')
 
     cur.execute("""UPDATE tautomers
                        SET 
@@ -962,11 +962,11 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
     if protonation:
-        add_protonation(conn=conn, table_name='mols')
+        add_protonation(conn=conn)
     if make_docking:
         Docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, use_dask=use_dask, ncpu=ncpu)
-        update_db(conn, table_name='mols', plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
+        update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
@@ -1009,7 +1009,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
                            supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
-        insert_db(conn, table_name='mols', data=data)
+        insert_db(conn, data=data)
         return True
 
     else:
@@ -1020,7 +1020,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
             add_protonation(conn=conn, table_name='tautomers')
         Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, use_dask=use_dask, ncpu=ncpu)
-        update_db(conn, table_name='tautomers', plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
+        update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
         return False
 
 
