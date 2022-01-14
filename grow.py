@@ -229,20 +229,22 @@ def get_mols(conn, mol_ids, table_name='mols'):
     :return:
     """
     cur = conn.cursor()
-    if table_name == 'tautomers':
-        sql = cur.execute(f'SELECT mol_block FROM tautomers WHERE id IN ({",".join("?" * len(mol_ids))})', mol_ids)
-        mols = [Chem.MolFromMolBlock(item[0], removeHs=False) for item in sql]
-    elif table_name == 'mols':
+    if table_name == 'mols':
         sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-        mols = []
-        for items in cur.execute(sql, mol_ids):
-            m = Chem.MolFromMolBlock(items[0], removeHs=False)
-            Chem.AssignAtomChiralTagsFromStructure(m)
-            if not m:
-                continue
-            if items[1] is not None:
-                m.SetProp('protected_user_canon_ids', items[1])
-            mols.append(m)
+    elif table_name == 'tautomers':
+        sql = f'SELECT mol_block FROM tautomers WHERE id IN ({",".join("?" * len(mol_ids))})'
+    else:
+        raise ValueError('wrong table name was supplied')
+
+    mols = []
+    for items in cur.execute(sql, mol_ids):
+        m = Chem.MolFromMolBlock(items[0], removeHs=False)
+        Chem.AssignAtomChiralTagsFromStructure(m)
+        if not m:
+            continue
+        if len(items) > 1 and items[1] is not None:
+            m.SetProp('protected_user_canon_ids', items[1])
+        mols.append(m)
     cur.close()
     return mols
 
