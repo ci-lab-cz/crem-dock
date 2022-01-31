@@ -64,10 +64,13 @@ def ligand_preparation(smi):
         AllChem.UFFOptimizeMolecule(m, maxIters=100)
         return Chem.MolToMolBlock(m)
 
-    mol = Chem.MolFromSmiles(smi)
-    mol_conf_sdf = convert2mol(mol)
-    if mol_conf_sdf is None:
+    try:
+        mol = Chem.MolFromSmiles(smi)
+        mol_conf_sdf = convert2mol(mol)
+    except TypeError:
+        sys.stderr.write(f'incorrect SMILES {smi} for converting to molecule\n')
         return None
+
     mol_conf_pdbqt = mk_prepare_ligand_string(mol_conf_sdf,
                                               build_macrocycle=False,
                                               # can do it True, but there is some problem with >=7-chains mols
