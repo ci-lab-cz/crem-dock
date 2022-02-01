@@ -922,38 +922,46 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
 def tautomer_refinement(conn, ncpu):
     cur = conn.cursor()
     smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
-    smiles, mol_ids = zip(*iter(smiles_dict.items()))
 
-    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        fd, output = tempfile.mkstemp()
-        try:
-            tmp.writelines(['\n'.join(smiles)])
-            tmp.flush()
-            cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
-            subprocess.call(cmd_run, shell=True)
-            stable_tautomers = open(output).read().split('\n')
-        finally:
-            os.remove(output)
+    if not smiles_dict:
+        sys.stderr.write('There are no molecules in database after growing\n')
+        return False
+    else:
+        smiles, mol_ids = zip(*iter(smiles_dict.items()))
 
-    with Pool(ncpu) as p:
-        canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
-    data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
-                     if smi != canon_smi]
+        with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+            fd, output = tempfile.mkstemp()
+            try:
+                tmp.writelines(['\n'.join(smiles)])
+                tmp.flush()
+                cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
+                subprocess.call(cmd_run, shell=True)
+                stable_tautomers = open(output).read().split('\n')
+            finally:
+                os.remove(output)
 
-    if data:
-        cols = ['id', 'smi']
-        insert_db(conn, data, cols, table_name='tautomers')
+        with Pool(ncpu) as p:
+            canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
+        data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
+                         if smi != canon_smi]
+        if data:
+            cols = ['id', 'smi']
+            insert_db(conn, data, cols, table_name='tautomers')
 
-    cur.execute("""UPDATE tautomers
-                       SET 
-                          docking_score = mols.docking_score,
-                          duplicate = mols.id
-                       FROM
-                          mols
-                       WHERE
-                           mols.smi = tautomers.smi
-                    """)
-    conn.commit()
+            cur.execute("""UPDATE tautomers
+                               SET 
+                                  docking_score = mols.docking_score,
+                                  duplicate = mols.id
+                               FROM
+                                  mols
+                               WHERE
+                                   mols.smi = tautomers.smi
+                            """)
+            conn.commit()
+            return True
+        else:
+            return False
+
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
                    ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
@@ -1015,12 +1023,13 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     else:
         sys.stderr.write('Growth has stopped\n')
         conn = sqlite3.connect(dbname)
-        tautomer_refinement(conn=conn, ncpu=ncpu)
-        if protonation:
-            add_protonation(conn=conn, table_name='tautomers')
-        Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+        check = tautomer_refinement(conn=conn, ncpu=ncpu)
+        if check:
+            if protonation:
+                add_protonation(conn=conn, table_name='tautomers')
+            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, use_dask=use_dask, ncpu=ncpu)
-        update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
+            update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
         return False
 
 
