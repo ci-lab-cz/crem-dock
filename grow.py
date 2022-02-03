@@ -430,7 +430,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, h_dist_threshold=2, 
     mol = neutralize_atoms(Chem.RemoveHs(mol))
     protected_ids = []
     for a in mol.GetAtoms():
-        if a.HasProp('_tmp') and a.GetIntProp('_tmp'):
+        if a.HasProp('__tmp') and a.GetIntProp('__tmp'):
             protected_ids.append(a.GetIdx())
 
     # if protonation:
