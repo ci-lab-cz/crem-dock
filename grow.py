@@ -549,7 +549,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
             with open(fname) as f:
                 for i, line in enumerate(f):
                     tmp = line.strip().split()
-                    smi = tmp[0]
+                    smi = Chem.CanonSmiles(tmp[0])
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
                     mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(Chem.MolFromSmiles(smi))
                     data.append((f'{prefix}-{name}' if prefix else name,
