@@ -774,6 +774,7 @@ def get_atom_idxs_for_canon(mol, canon_idxs):
     :param canon_idxs: list[int]
     :return: sorted list of integers
     '''
+    mol = Chem.AddHs(mol)
     canon_ranks = np.array(Chem.CanonicalRankAtoms(mol))
     return sorted(np.where(np.isin(canon_ranks, canon_idxs))[0].tolist())
 
@@ -785,6 +786,7 @@ def get_canon_for_atom_idx(mol, idx):
     :param idx: list[int]
     :return: sorted list of integers
     '''
+    mol = Chem.AddHs(mol)
     canon_ranks = np.array(Chem.CanonicalRankAtoms(mol))
     return sorted(canon_ranks[idx].tolist())
 
