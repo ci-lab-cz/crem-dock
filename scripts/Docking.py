@@ -211,8 +211,7 @@ def iter_docking(dbname, table_name, receptor_pdbqt_fname, protein_setup, proton
             iteration = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0]
             smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} "
                                            f"FROM mols "
-                                           f"WHERE iteration = {iteration} AND docking_score IS NULL"
-                                           f"AND {smi_field_name} !=''"))
+                                           f"WHERE iteration = {iteration} AND docking_score IS NULL AND {smi_field_name} !=''"))
         else:
             smiles_dict = dict(cur.execute(f"SELECT id, {smi_field_name} "
                                            f"FROM {table_name} "
