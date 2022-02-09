@@ -926,41 +926,41 @@ def tautomer_refinement(conn, ncpu):
     if not smiles_dict:
         sys.stderr.write('There are no molecules in database after growing\n')
         return False
+
+    smiles, mol_ids = zip(*iter(smiles_dict.items()))
+
+    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+        fd, output = tempfile.mkstemp()
+        try:
+            tmp.writelines(['\n'.join(smiles)])
+            tmp.flush()
+            cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
+            subprocess.call(cmd_run, shell=True)
+            stable_tautomers = open(output).read().split('\n')
+        finally:
+            os.remove(output)
+
+    with Pool(ncpu) as p:
+        canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
+    data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
+                     if smi != canon_smi]
+    if data:
+        cols = ['id', 'smi']
+        insert_db(conn, data, cols, table_name='tautomers')
+
+        cur.execute("""UPDATE tautomers
+                           SET 
+                              docking_score = mols.docking_score,
+                              duplicate = mols.id
+                           FROM
+                              mols
+                           WHERE
+                               mols.smi = tautomers.smi
+                        """)
+        conn.commit()
+        return True
     else:
-        smiles, mol_ids = zip(*iter(smiles_dict.items()))
-
-        with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-            fd, output = tempfile.mkstemp()
-            try:
-                tmp.writelines(['\n'.join(smiles)])
-                tmp.flush()
-                cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
-                subprocess.call(cmd_run, shell=True)
-                stable_tautomers = open(output).read().split('\n')
-            finally:
-                os.remove(output)
-
-        with Pool(ncpu) as p:
-            canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
-        data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
-                         if smi != canon_smi]
-        if data:
-            cols = ['id', 'smi']
-            insert_db(conn, data, cols, table_name='tautomers')
-
-            cur.execute("""UPDATE tautomers
-                               SET 
-                                  docking_score = mols.docking_score,
-                                  duplicate = mols.id
-                               FROM
-                                  mols
-                               WHERE
-                                   mols.smi = tautomers.smi
-                            """)
-            conn.commit()
-            return True
-        else:
-            return False
+        return False
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
