@@ -919,9 +919,10 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     return stat_scores
 
 
-def tautomer_refinement(conn, ncpu):
+def tautomer_refinement(conn, ncpu, protonation):
     cur = conn.cursor()
-    smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
+    smi_field_name = 'smi_protonated' if protonation else 'smi'
+    smiles_dict = dict(cur.execute(f"SELECT smi, id FROM mols WHERE iteration !=0 AND {smi_field_name} !=''"))
 
     if not smiles_dict:
         sys.stderr.write('There are no molecules in database after growing\n')
@@ -1023,7 +1024,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     else:
         sys.stderr.write('Growth has stopped\n')
         conn = sqlite3.connect(dbname)
-        check = tautomer_refinement(conn=conn, ncpu=ncpu)
+        check = tautomer_refinement(conn=conn, ncpu=ncpu, protonation=protonation)
         if check:
             if protonation:
                 add_protonation(conn=conn, table_name='tautomers')
