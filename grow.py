@@ -938,7 +938,7 @@ def tautomer_refinement(conn, ncpu):
             subprocess.call(cmd_run, shell=True)
             stable_tautomers = Chem.SDMolSupplier(output)
             tautomers = [mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None) for idx, mol in enumerate(stable_tautomers)]
-            tautomers_, smiles_, mol_ids_ = zip(*iter([(i, j, z) for i, j, z in zip(tautomers, smiles, mol_ids) if i is not None]))
+            tautomers_, smiles_, mol_ids_ = zip(*((i, j, z) for i, j, z in zip(tautomers, smiles, mol_ids) if i is not None))
         finally:
             os.remove(output)
 
