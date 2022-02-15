@@ -936,8 +936,8 @@ def tautomer_refinement(conn, ncpu):
             tmp.flush()
             cmd_run = f"cxcalc -S majortautomer -f smiles '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
-            stable_tautomers = Chem.SDMolSupplier(output)
-            tautomers = [mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None) for idx, mol in enumerate(stable_tautomers)]
+            tautomers = Chem.SDMolSupplier(output)
+            tautomers = [mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None) for idx, mol in enumerate(tautomers)]
         finally:
             os.remove(output)
 
