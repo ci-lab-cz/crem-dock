@@ -938,14 +938,14 @@ def tautomer_refinement(conn, ncpu):
             subprocess.call(cmd_run, shell=True)
             stable_tautomers = Chem.SDMolSupplier(output)
             tautomers = [mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None) for idx, mol in enumerate(stable_tautomers)]
-            tautomers_, smiles_, mol_ids_ = zip(*((i, j, z) for i, j, z in zip(tautomers, smiles, mol_ids) if i is not None))
         finally:
             os.remove(output)
 
-    with Pool(ncpu) as p:
-        canonical_smiles = [x for x in p.map(Chem.CanonSmiles, tautomers_)]
-    data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles_, canonical_smiles, mol_ids_)
-                     if smi != canon_smi]
+    data = dict()
+    for smi, stable_tautomer, id_ in zip(smiles, tautomers, mol_ids):
+        if stable_tautomer is not None and smi != Chem.CanonSmiles(stable_tautomer):
+            data[id_] = Chem.CanonSmiles(stable_tautomer)
+
     if data:
         cols = ['id', 'smi']
         insert_db(conn, data, cols, table_name='tautomers')
