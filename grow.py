@@ -934,16 +934,20 @@ def tautomer_refinement(conn, ncpu):
         try:
             tmp.writelines(['\n'.join(smiles)])
             tmp.flush()
-            cmd_run = f"cxcalc moststabletautomer -f smiles '{tmp.name}' > '{output}'"
+            cmd_run = f"cxcalc -S majortautomer -f smiles '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
-            stable_tautomers = open(output).read().split('\n')
+            tautomers = Chem.SDMolSupplier(output)
         finally:
             os.remove(output)
 
-    with Pool(ncpu) as p:
-        canonical_smiles = [x for x in p.map(Chem.CanonSmiles, stable_tautomers)]
-    data = [(id_, canon_smi) for smi, canon_smi, id_ in zip(smiles, canonical_smiles, mol_ids)
-                     if smi != canon_smi]
+    data = dict()
+    for smi, tautomer, id_ in zip(smiles, tautomers, mol_ids):
+        stable_tautomer = tautomer.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
+        if stable_tautomer is not None:
+            tautomer_smi = Chem.CanonSmiles(stable_tautomer)
+            if tautomer_smi != smi:
+                data[id_] = tautomer_smi
+
     if data:
         cols = ['id', 'smi']
         insert_db(conn, data, cols, table_name='tautomers')
