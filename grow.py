@@ -940,13 +940,13 @@ def tautomer_refinement(conn, ncpu):
         finally:
             os.remove(output)
 
-    data = dict()
+    data = list()
     for smi, tautomer, id_ in zip(smiles, tautomers, mol_ids):
         stable_tautomer = tautomer.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
         if stable_tautomer is not None:
             tautomer_smi = Chem.CanonSmiles(stable_tautomer)
             if tautomer_smi != smi:
-                data[id_] = tautomer_smi
+                data.append((id_, tautomer_smi))
 
     if data:
         cols = ['id', 'smi']
