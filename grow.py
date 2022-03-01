@@ -30,6 +30,7 @@ from sklearn.cluster import KMeans
 from scripts import Docking, plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
+from moldock import vina_docking, gnina_docking, preparation_for_docking
 
 def ranking_type(x):
     ranking_types = {1: ranking_by_docking_score,
@@ -69,41 +70,41 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def add_protonation(conn, table_name='mols'):
-    '''
-    Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
-    Parse output and update db.
-    :param conn:
-    :param table_name:
-    :return:
-    '''
-    cur = conn.cursor()
-    smiles_list = list(cur.execute(f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND "
-                                   f"smi_protonated is NULL"))
-    if not smiles_list:
-        sys.stderr.write('no molecules to protonate in database\n')
-        return
-
-    smiles, mol_ids = zip(*smiles_list)
-
-    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        fd, output = tempfile.mkstemp()   # use output file to avoid overflow of stdout is extreme cases
-        try:
-            tmp.writelines(['\n'.join(smiles)])
-            tmp.flush()
-            cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
-            subprocess.call(cmd_run, shell=True)
-            smiles_protonated = open(output).read().split('\n')
-        finally:
-            os.remove(output)
-
-    for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
-        cur.execute(f"""UPDATE {table_name}
-                       SET smi_protonated = ?
-                       WHERE
-                           id = ?
-                    """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
-    conn.commit()
+# def add_protonation(conn, table_name='mols'):
+#     '''
+#     Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
+#     Parse output and update db.
+#     :param conn:
+#     :param table_name:
+#     :return:
+#     '''
+#     cur = conn.cursor()
+#     smiles_list = list(cur.execute(f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND "
+#                                    f"smi_protonated is NULL"))
+#     if not smiles_list:
+#         sys.stderr.write('no molecules to protonate in database\n')
+#         return
+#
+#     smiles, mol_ids = zip(*smiles_list)
+#
+#     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+#         fd, output = tempfile.mkstemp()   # use output file to avoid overflow of stdout is extreme cases
+#         try:
+#             tmp.writelines(['\n'.join(smiles)])
+#             tmp.flush()
+#             cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
+#             subprocess.call(cmd_run, shell=True)
+#             smiles_protonated = open(output).read().split('\n')
+#         finally:
+#             os.remove(output)
+#
+#     for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
+#         cur.execute(f"""UPDATE {table_name}
+#                        SET smi_protonated = ?
+#                        WHERE
+#                            id = ?
+#                     """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
+#     conn.commit()
 
 
 def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='mols'):
@@ -968,16 +969,22 @@ def tautomer_refinement(conn, ncpu):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
-                   ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
+                   ranking_func, ncpu, protonation, exhaustiveness, seed, n_poses, make_docking=True, use_dask=False, plif_list=None,
                    plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
     conn = sqlite3.connect(dbname)
     if protonation:
-        add_protonation(conn=conn)
+        # add_protonation(conn=conn)
+        preparation_for_docking.add_protonation(conn=conn)
     if make_docking:
-        Docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+        vina_docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+                                  protonation=protonation, exhaustiveness=exhaustiveness, seed=seed, n_poses=n_poses, ncpu=ncpu,
+                                  use_dask=use_dask, add_sql=f'iteration={iteration-1}')
+
+        # gnina_docking.iter_docking()
+        # Docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
+        #                      protonation=protonation, use_dask=use_dask, ncpu=ncpu)
         update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
 
         res = []
@@ -1030,7 +1037,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
         check = tautomer_refinement(conn=conn, ncpu=ncpu)
         if check:
             if protonation:
-                add_protonation(conn=conn, table_name='tautomers')
+                preparation_for_docking.add_protonation(conn=conn, table_name='tautomers')
             Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
                              protonation=protonation, use_dask=use_dask, ncpu=ncpu)
             update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
@@ -1114,6 +1121,13 @@ def main():
                              'which will be analyzed together.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
+    parser.add_argument('-e', '--exhaustiveness', metavar='INTEGER', required=False, type=int, default=8,
+                        help='exhaustiveness of docking search.')
+    parser.add_argument('--seed', metavar='INTEGER', required=False, type=int, default=0,
+                        help='seed to make results reproducible.')
+    parser.add_argument('--n_poses', default=50, type=int,
+                        help='the number of poses generated by Vina, but only the top one will be stored in the output db.'
+                             'This parameter seems affect docking results to find better top pose.')
 
     args = parser.parse_args()
 
@@ -1174,7 +1188,8 @@ def main():
                                  ranking_func=ranking_type(args.ranking), ncpu=args.ncpu, make_docking=make_docking,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
                                  max_atoms=args.max_atoms, max_replacements=args.max_replacements,
-                                 protonation=not args.no_protonation, use_dask=args.hostfile is not None,
+                                 protonation=not args.no_protonation, exhaustiveness=args.exhaustiveness, seed=args.seed,
+                                 n_poses=args.n_poses, use_dask=args.hostfile is not None,
                                  plif_list=args.plif, plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff,
                                  prefix=args.prefix)
             make_docking = True
