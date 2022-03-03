@@ -30,7 +30,7 @@ from sklearn.cluster import KMeans
 from scripts import Docking, plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
-from moldock import vina_docking, preparation_for_docking
+from moldock import vina_docking, gnina_docking, preparation_for_docking
 
 def ranking_type(x):
     ranking_types = {1: ranking_by_docking_score,
@@ -1128,6 +1128,20 @@ def main():
                              'This parameter seems affect docking results to find better top pose.')
     parser.add_argument('--docking', default='vina', type=str, choices=['vina', 'gnina', 'smina'],
                         help='the type of the docking.')
+    parser.add_argument('--install_dir', metavar='DIRNAME', type=filepath_type, required=True,
+                        help='path to the dir with installed GNINA.')
+    parser.add_argument('--scoring', metavar='STRING', required=False, default='vina',
+                        choices=['ad4_scoring', 'default', 'dkoes_fast', 'dkoes_scoring', 'dkoes_scoring_old', 'vina',
+                                 'vinardo'],
+                        help='type of scoring function.')
+    parser.add_argument('--addH', action='store_true', default=False,
+                        help='add hydrogens in ligands.')
+    parser.add_argument('--cnn_scoring', metavar='STRING', required=False, default='rescore',
+                        choices=['None', 'rescore', 'refinement', 'all'],
+                        help='type of CNN scoring.')
+    parser.add_argument('--cnn', metavar='STRING', required=False, default='dense_ensemble',
+                        choices=['crossdock_default2018_ensemble', 'dense_ensemble'],
+                        help='type of built-in model to use.')
 
     args = parser.parse_args()
 
@@ -1162,9 +1176,14 @@ def main():
 
     if args.docking == 'vina':
         func = partial(vina_docking.iter_docking, dbname=args.output, table_name='mols', receptor_pdbqt_fname=args.protein,
-                                  protein_setup=args.protein_setup, protonation=not args.no_protonation,
-                                  exhaustiveness=args.exhaustiveness, seed=args.seed, n_poses=args.n_poses,
-                                  ncpu=args.ncpu, use_dask=args.hostfile is not None)
+                       protein_setup=args.protein_setup, protonation=not args.no_protonation, exhaustiveness=args.exhaustiveness,
+                       seed=args.seed, n_poses=args.n_poses, ncpu=args.ncpu, use_dask=args.hostfile is not None)
+    elif args.docking =='gnina':
+        gnina_script_dir = os.path.join(args.install_dir, 'gnina')
+        func = partial(gnina_docking.iter_docking, script_file=gnina_script_dir, tmpdir=tmpdir, dbname=args.output,
+                       receptor_pdbqt_fname=args.protein, protein_setup=args.protein_setup, protonation=not args.no_protonation,
+                       exhaustiveness=args.exhaustiveness, seed=args.seed, scoring=args.scoring, addH=args.addH,
+                       cnn_scoring=args.cnn_scoring, cnn=args.cnn, ncpu=args.ncpu, use_dask=args.hostfile is not None)
 
     os.makedirs(tmpdir, exist_ok=True)
     iteration = 1
