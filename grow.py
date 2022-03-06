@@ -978,11 +978,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
         # add_protonation(conn=conn)
         preparation_for_docking.add_protonation(conn=conn)
     if make_docking:
-        type_docking(add_sql=f'iteration={iteration - 1}')
-
-        # gnina_docking.iter_docking()
-        # Docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-        #                      protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+        type_docking(add_sql=f'iteration={iteration - 1}', table_name='mols')
         update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
 
         res = []
@@ -1036,8 +1032,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
         if check:
             if protonation:
                 preparation_for_docking.add_protonation(conn=conn, table_name='tautomers')
-            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+            type_docking(table_name='tautomers')
             update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
         return False
 
@@ -1175,7 +1170,7 @@ def main():
         tmpdir = args.tmpdir
 
     if args.docking == 'vina':
-        func = partial(vina_docking.iter_docking, dbname=args.output, table_name='mols', receptor_pdbqt_fname=args.protein,
+        func = partial(vina_docking.iter_docking, dbname=args.output, receptor_pdbqt_fname=args.protein,
                        protein_setup=args.protein_setup, protonation=not args.no_protonation, exhaustiveness=args.exhaustiveness,
                        seed=args.seed, n_poses=args.n_poses, ncpu=args.ncpu, use_dask=args.hostfile is not None)
     elif args.docking =='gnina':
