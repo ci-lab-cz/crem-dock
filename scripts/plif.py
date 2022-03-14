@@ -20,7 +20,7 @@ def filter_by_plif(mols, plif_ref, protein_fname, threshold=1):
     """
     if len(mols) == 0:
         return []
-    prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False))
+    prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=False))
     fp = plf.Fingerprint()
     fp.run_from_iterable((plf.Molecule.from_rdkit(mol) for mol in mols), prot)   # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
@@ -45,7 +45,7 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df):
     :param plif_ref_df: pandas.DataFrame of reference interactions (with a single row simplified header, dot-separated)
     :return:
     """
-    plf_prot = plf.Molecule(Chem.MolFromPDBFile(plif_protein_fname, removeHs=False))
+    plf_prot = plf.Molecule(Chem.MolFromPDBFile(plif_protein_fname, removeHs=False, sanitize=False))
     fp = plf.Fingerprint()
     fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot)   # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
