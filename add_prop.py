@@ -3,7 +3,6 @@
 import argparse
 import sqlite3
 import sys
-from collections import defaultdict
 from functools import partial
 from multiprocessing import Pool
 
@@ -11,10 +10,10 @@ from arg_types import filepath_type, cpu_type
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
+from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA
 
 
-props = ['mw', 'logp', 'rtb']
+props = ['mw', 'logp', 'rtb', 'tpsa']
 
 # SQLite DB will be updated by chunks
 if sqlite3.sqlite_version_info[:2] <= (3, 32):
@@ -27,9 +26,8 @@ def property_type(x):
     return [item.lower() for item in x if item.lower() in props]
 
 
-def calc(items, mw=False, logp=False, rtb=False):
-    # items - (smi, dict of lists of rowids)
-    smi, rowids = items
+def calc(items, mw=False, logp=False, rtb=False, tpsa=False):
+    rowid, smi = items
     res = dict()
     mol = Chem.MolFromSmiles(smi)
     if mol:
@@ -39,7 +37,10 @@ def calc(items, mw=False, logp=False, rtb=False):
             res['logp'] = round(MolLogP(mol), 2)
         if rtb:
             res['rtb'] = CalcNumRotatableBonds(mol)
-    return rowids, res
+        if tpsa:
+            res['tpsa'] = CalcTPSA(mol)
+    upd_str = ','.join(f'{k} = {v}' for k, v in res.items())
+    return rowid, upd_str
 
 
 def main():
@@ -63,12 +64,15 @@ def main():
 
     pool = Pool(args.ncpu)
 
+    mw = 'mw' in args.properties
+    logp = 'logp' in args.properties
+    rtb = 'rtb' in args.properties
+    tpsa = 'tpsa' in args.properties
+
     with sqlite3.connect(args.input) as conn:
         cur = conn.cursor()
         tables = cur.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'radius%'")
         tables = [i[0] for i in tables]
-
-        d = defaultdict(lambda: defaultdict(list))  # {smi: {radius1: [rowids], radius2: [rowids], ...}
 
         for table in tables:
             for prop in args.properties:
@@ -82,32 +86,15 @@ def main():
             cur.execute(sql)
             res = cur.fetchall()
 
-            # convert to dict to merge identical smiles
-            for rowid, smi in res:
-                d[smi][table].append(rowid)
+            for i, (rowid, upd_str) in enumerate(pool.imap_unordered(partial(calc, mw=mw, logp=logp, rtb=rtb, tpsa=tpsa), res), 1):
+                cur.execute(f"UPDATE {table} SET {upd_str} WHERE rowid = '{rowid}'")
+                if i % 10000 == 0:
+                    conn.commit()
+                    if args.verbose:
+                        sys.stderr.write(f'\r{i} fragments processed')
+            conn.commit()
 
-        if not d:
-            sys.stderr.write(f'{args.input}: all requested properties were calculated previously. Exit.\n')
-            exit()
-
-        mw = 'mw' in args.properties
-        logp = 'logp' in args.properties
-        rtb = 'rtb' in args.properties
-
-        for i, (rowids, res) in enumerate(pool.imap_unordered(partial(calc, mw=mw, logp=logp, rtb=rtb), d.items()), 1):
-            if res:
-                for table, ids in rowids.items():
-                    values = ', '.join([f'{k} = {v}' for k, v in res.items()])
-                    for j in range(0, len(ids), CHUNK_SIZE):  # update DB by chunks
-                        sql = f"UPDATE {table} SET {values} WHERE rowid IN ({','.join('?' * len(ids[j:j+CHUNK_SIZE]))})"
-                        cur.execute(sql, ids[j:j+CHUNK_SIZE])
-            if i % 10000 == 0:
-                conn.commit()
-                if args.verbose:
-                    sys.stderr.write(f'\r{i} fragments processed out of {len(d)}')
-        conn.commit()
-
-        sys.stderr.write(f'\nProperties were successfully added to {args.input}\n')
+            sys.stderr.write(f'\nProperties were successfully added to {args.input}\n')
 
 
 if __name__ == '__main__':
