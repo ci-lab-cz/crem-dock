@@ -56,16 +56,17 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df):
     return mol.GetProp('_Name'), round(sim, 3)
 
 
-def calc_plif(protein_fname, ligand_fname):
+def calc_plif(protein_fname, ligand_fname, sanitize_protein):
     """
     Calculate PLIF for multiple molecules in input SDF file.
     :param protein_fname: protein PDB
     :param ligand_fname: SDF with ligands
+    :param sanitize_protein: (bool) whether or not sanitize protein structure
     :return: pandas DataFrame with
     """
     mols = [mol for mol in Chem.SDMolSupplier(ligand_fname) if mol is not None]
     mol_names = [mol.GetProp('_Name') for mol in mols]
-    plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False))
+    plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=sanitize_protein))
     fp = plf.Fingerprint()
     fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot)   # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
@@ -81,11 +82,15 @@ def main():
                         help='PDB file of a protein.')
     parser.add_argument('-l', '--ligands', metavar='FILENAME', required=True, type=filepath_type,
                         help='SDF file of ligands.')
+    parser.add_argument('-x', '--no_protein_sanitization', action='store_true', default=False,
+                        help='sanitize input protein molecule.')
     parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
                         help='output file with compute PLIF.')
 
     args = parser.parse_args()
-    df = calc_plif(args.protein, args.ligands)
+    df = calc_plif(protein_fname=args.protein,
+                   ligand_fname=args.ligands,
+                   sanitize_protein=not args.no_protein_sanitization)
     df.to_csv(args.output, sep='\t')
 
 
