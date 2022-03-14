@@ -1,6 +1,8 @@
+import argparse
 import pandas as pd
 import prolif as plf
 from rdkit import Chem, DataStructs
+from arg_types import filepath_type
 
 
 def filter_by_plif(mols, plif_ref, protein_fname, threshold=1):
@@ -52,3 +54,40 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df):
     b = plf.to_bitvectors(df)
     sim = DataStructs.TverskySimilarity(b[0], b[1], 1, 0)
     return mol.GetProp('_Name'), round(sim, 3)
+
+
+def calc_plif(protein_fname, ligand_fname):
+    """
+    Calculate PLIF for multiple molecules in input SDF file.
+    :param protein_fname: protein PDB
+    :param ligand_fname: SDF with ligands
+    :return: pandas DataFrame with
+    """
+    mols = [mol for mol in Chem.SDMolSupplier(ligand_fname) if mol is not None]
+    mol_names = [mol.GetProp('_Name') for mol in mols]
+    plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False))
+    fp = plf.Fingerprint()
+    fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot)   # danger, hope it will always keep the order of molecules
+    df = fp.to_dataframe()
+    df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
+    df.index = mol_names
+    return df
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Calculate PLIF for an input protein and molecules.',
+                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-p', '--protein', metavar='FILENAME', required=True, type=filepath_type,
+                        help='PDB file of a protein.')
+    parser.add_argument('-l', '--ligands', metavar='FILENAME', required=True, type=filepath_type,
+                        help='SDF file of ligands.')
+    parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
+                        help='output file with compute PLIF.')
+
+    args = parser.parse_args()
+    df = calc_plif(args.protein, args.ligands)
+    df.to_csv(args.output, sep='\t')
+
+
+if __name__ == '__main__':
+    main()
