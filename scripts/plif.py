@@ -64,7 +64,7 @@ def calc_plif(protein_fname, ligand_fname, sanitize_protein):
     :param sanitize_protein: (bool) whether or not sanitize protein structure
     :return: pandas DataFrame with
     """
-    mols = [mol for mol in Chem.SDMolSupplier(ligand_fname) if mol is not None]
+    mols = [mol for mol in Chem.SDMolSupplier(ligand_fname, removeHs=False) if mol is not None]
     mol_names = [mol.GetProp('_Name') for mol in mols]
     plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=sanitize_protein))
     fp = plf.Fingerprint()
