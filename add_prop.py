@@ -10,10 +10,10 @@ from arg_types import filepath_type, cpu_type
 from rdkit import Chem
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.Crippen import MolLogP
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA
+from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA, CalcFractionCSP3
 
 
-props = ['mw', 'logp', 'rtb', 'tpsa']
+props = ['mw', 'logp', 'rtb', 'tpsa', 'fcsp3']
 
 # SQLite DB will be updated by chunks
 if sqlite3.sqlite_version_info[:2] <= (3, 32):
@@ -26,7 +26,7 @@ def property_type(x):
     return [item.lower() for item in x if item.lower() in props]
 
 
-def calc(items, mw=False, logp=False, rtb=False, tpsa=False):
+def calc(items, mw=False, logp=False, rtb=False, tpsa=False, fcsp3=False):
     rowid, smi = items
     res = dict()
     mol = Chem.MolFromSmiles(smi)
@@ -39,6 +39,8 @@ def calc(items, mw=False, logp=False, rtb=False, tpsa=False):
             res['rtb'] = CalcNumRotatableBonds(mol)
         if tpsa:
             res['tpsa'] = CalcTPSA(mol)
+        if fcsp3:
+            res['fcps3'] = round(CalcFractionCSP3(mol), 3)
     upd_str = ','.join(f'{k} = {v}' for k, v in res.items())
     return rowid, upd_str
 
@@ -49,7 +51,7 @@ def main():
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-i', '--input', metavar='FILENAME', required=True, type=filepath_type,
                         help='SQLite DB with CReM fragments.')
-    parser.add_argument('-p', '--properties', metavar='NAMES', required=False, nargs='*', default=props,
+    parser.add_argument('-p', '--properties', metavar='NAMES', required=False, nargs='*', default=props, choices=props,
                         help='properties to compute.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
@@ -68,6 +70,7 @@ def main():
     logp = 'logp' in args.properties
     rtb = 'rtb' in args.properties
     tpsa = 'tpsa' in args.properties
+    fcsp3 = 'fcsp3' in args.properties
 
     with sqlite3.connect(args.input) as conn:
         cur = conn.cursor()
@@ -86,7 +89,7 @@ def main():
             cur.execute(sql)
             res = cur.fetchall()
 
-            for i, (rowid, upd_str) in enumerate(pool.imap_unordered(partial(calc, mw=mw, logp=logp, rtb=rtb, tpsa=tpsa), res), 1):
+            for i, (rowid, upd_str) in enumerate(pool.imap_unordered(partial(calc, mw=mw, logp=logp, rtb=rtb, tpsa=tpsa, fcsp3=fcsp3), res), 1):
                 cur.execute(f"UPDATE {table} SET {upd_str} WHERE rowid = '{rowid}'")
                 if i % 10000 == 0:
                     conn.commit()
