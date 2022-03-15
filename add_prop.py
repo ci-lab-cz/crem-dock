@@ -40,7 +40,7 @@ def calc(items, mw=False, logp=False, rtb=False, tpsa=False, fcsp3=False):
         if tpsa:
             res['tpsa'] = CalcTPSA(mol)
         if fcsp3:
-            res['fcps3'] = round(CalcFractionCSP3(mol), 3)
+            res['fcsp3'] = round(CalcFractionCSP3(mol), 3)
     upd_str = ','.join(f'{k} = {v}' for k, v in res.items())
     return rowid, upd_str
 
