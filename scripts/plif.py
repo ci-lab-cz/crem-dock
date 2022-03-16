@@ -79,11 +79,11 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df):
     return mol.GetProp('_Name'), round(sim, 3)
 
 
-def calc_plif(protein_fname, mols, sanitize_protein):
+def calc_plif(mols, protein_fname, sanitize_protein):
     """
     Calculate PLIF for multiple molecules in input SDF file.
-    :param protein_fname: protein PDB
     :param mols: list of RDKit mols (ligands)
+    :param protein_fname: protein PDB
     :param sanitize_protein: (bool) whether or not sanitize protein structure
     :return: pandas DataFrame with
     """
