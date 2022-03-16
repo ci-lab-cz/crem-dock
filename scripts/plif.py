@@ -121,6 +121,8 @@ def main():
     parser.add_argument('-c', '--ncpu', metavar='INTEGER', required=False, type=cpu_type, default=1,
                         help='number of CPUs to use for calculation.')
 
+    Chem.SetDefaultPickleProperties(Chem.PropertyPickleOptions.AllProps)
+
     args = parser.parse_args()
     df = calc_plif_mp(protein_fname=args.protein,
                       ligand_fname=args.ligands,
