@@ -102,7 +102,7 @@ def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, ncpu=1):
     mols = [mol for mol in Chem.SDMolSupplier(ligand_fname, removeHs=False) if mol is not None]
     chunks = chunk(mols, ncpu)
     df = list(p.imap(partial(calc_plif, protein_fname=protein_fname, sanitize_protein=sanitize_protein), chunks))
-    df = pd.concat(df)
+    df = pd.concat(df).fillna(False)
     df = df.reindex(sorted(df.columns), axis=1)
     return df
 
