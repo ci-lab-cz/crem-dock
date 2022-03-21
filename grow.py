@@ -37,7 +37,8 @@ def ranking_type(x):
                      2: ranking_by_docking_score_qed,
                      3: ranking_by_num_heavy_atoms,
                      4: ranking_by_num_heavy_atoms_qed,
-                     5: ranking_by_FCsp3_BM}
+                     5: ranking_by_FCsp3_BM,
+                     6: ranking_by_num_heavy_atoms_FCsp3_BM}
     try:
         return ranking_types[x]
     except KeyError:
@@ -935,6 +936,22 @@ def ranking_by_FCsp3_BM(conn, mol_ids):
     return stat_scores
 
 
+def ranking_by_num_heavy_atoms_FCsp3_BM(conn, mol_ids):
+    """
+    scoring is calculated by the formula: docking score / number heavy atoms * FCsp3_BM after scaling at 0.3
+    :param conn:
+    :param mol_ids:
+    :return:
+    """
+    scores = ranking_by_num_heavy_atoms(conn, mol_ids)
+    scale_scores = scale_min_max(scores)
+    mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
+    fcsp3_bm = {mol_id: CalcFractionCSP3(GetScaffoldForMol(m)) for mol_id, m in mol_dict.items()}
+    fcsp3_scale = {mol_id: fcsp3 / 0.3 if fcsp3 <= 0.3 else 1 for mol_id, fcsp3 in fcsp3_bm.items()}
+    stat_scores = {mol_id: (scale_scores[mol_id] * fcsp3_scale[mol_id]) for mol_id in mol_ids}
+    return stat_scores
+
+
 def tautomer_refinement(conn, ncpu):
     cur = conn.cursor()
     smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
@@ -1100,7 +1117,8 @@ def main():
                              '2 - ranking based on docking scores and QED, '
                              '3 - ranking based on docking score/number heavy atoms of molecule,'
                              '4 - raking based on docking score/number heavy atoms of molecule and QED,'
-                             '5 - ranking based on docking score and FCsp3_BM.')
+                             '5 - ranking based on docking score and FCsp3_BM,'
+                             '6 - ranking based docking score/number heavy atoms of molecule and FCsp3_BM.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--mw', default=450, type=float,
