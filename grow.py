@@ -23,7 +23,8 @@ from rdkit.Chem import AllChem, QED
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
+from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcFractionCSP3
+from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
 
@@ -35,7 +36,8 @@ def ranking_type(x):
     ranking_types = {1: ranking_by_docking_score,
                      2: ranking_by_docking_score_qed,
                      3: ranking_by_num_heavy_atoms,
-                     4: ranking_by_num_heavy_atoms_qed}
+                     4: ranking_by_num_heavy_atoms_qed,
+                     5: ranking_by_FCsp3_BM}
     try:
         return ranking_types[x]
     except KeyError:
@@ -919,6 +921,16 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     return stat_scores
 
 
+def ranking_by_FCsp3_BM(conn, mol_ids):
+    scores = get_corrected_mol_score(conn, mol_ids)
+    scale_scores = scale_min_max(scores)
+    mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
+    fcsp3_bm = {mol_id: CalcFractionCSP3(GetScaffoldForMol(m)) for mol_id, m in mol_dict.items()}
+    fcsp3_scale = {mol_id: fcsp3 / 0.3 if fcsp3 <= 0.3 else 1 for mol_id, fcsp3 in fcsp3_bm.items()}
+    stat_scores = {mol_id: (scale_scores[mol_id] * fcsp3_scale[mol_id]) for mol_id in mol_ids}
+    return stat_scores
+
+
 def tautomer_refinement(conn, ncpu):
     cur = conn.cursor()
     smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
@@ -1083,7 +1095,8 @@ def main():
                         help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
                              '2 - ranking based on docking scores and QED, '
                              '3 - ranking based on docking score/number heavy atoms of molecule,'
-                             '4 - raking based on docking score/number heavy atoms of molecule and QED')
+                             '4 - raking based on docking score/number heavy atoms of molecule and QED,'
+                             '5 - ranking based on docking score and FCsp3_BM.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--mw', default=450, type=float,
