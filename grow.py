@@ -922,6 +922,12 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
 
 
 def ranking_by_FCsp3_BM(conn, mol_ids):
+    """
+    scoring is calculated by the formula: docking score after scaling * FCsp3_BM after scaling at 0.3
+    :param conn:
+    :param mol_ids:
+    :return:
+    """
     scores = get_corrected_mol_score(conn, mol_ids)
     scale_scores = scale_min_max(scores)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
