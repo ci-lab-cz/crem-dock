@@ -515,6 +515,7 @@ def create_db(fname):
              rtb INTEGER,
              logp REAL,
              qed REAL,
+             tpsa REAL,
              rmsd REAL,
              plif_sim REAL,
              pdb_block TEXT,
@@ -556,15 +557,16 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                     tmp = line.strip().split()
                     smi = Chem.CanonSmiles(tmp[0])
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(Chem.MolFromSmiles(smi))
+                    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(Chem.MolFromSmiles(smi))
                     data.append((f'{prefix}-{name}' if prefix else name,
                                  0,
                                  smi,
                                  mol_mw,
                                  mol_rtb,
                                  mol_logp,
-                                 mol_qed))
-            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed']
+                                 mol_qed,
+                                 mol_tpsa))
+            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa']
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -579,7 +581,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                         # rdkit numeration starts with 0 and sdf numeration starts with 1
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
-                    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
+                    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
                     data.append((f'{prefix}-{name}' if prefix else name,
                                  0,
                                  Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True),
@@ -587,9 +589,10 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                                  mol_rtb,
                                  mol_logp,
                                  mol_qed,
+                                 mol_tpsa,
                                  Chem.MolToMolBlock(mol),
                                  protected_user_canon_ids))
-            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'mol_block', 'protected_user_canon_ids']
+            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'mol_block', 'protected_user_canon_ids']
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -813,7 +816,8 @@ def calc_properties(mol):
     rtb = CalcNumRotatableBonds(Chem.RemoveHs(mol)) # does not count things like amide or ester bonds
     logp = round(MolLogP(mol), 2)
     qed = round(QED.qed(mol), 3)
-    return mw, rtb, logp, qed
+    tpsa = round(CalcTPSA(mol), 2)
+    return mw, rtb, logp, qed, tpsa
 
 
 def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
@@ -828,7 +832,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
     :return:
     """
     data = []
-    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
+    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
     if mol_mw <= mw and mol_rtb <= rtb and mol_logp <= logp:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
@@ -845,7 +849,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
                 child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
             data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                         parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None,
+                         parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, None, None,
                          None, None, child_protected_canon_user_id, None))
     return data
 
