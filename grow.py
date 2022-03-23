@@ -23,7 +23,7 @@ from rdkit.Chem import AllChem, QED
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers, StereoEnumerationOptions
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcFractionCSP3
+from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcFractionCSP3, CalcTPSA
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
@@ -384,7 +384,7 @@ def get_protein_heavy_atom_xyz(protein_pdbqt):
     return xyz
 
 
-def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
 
     # def find_protected_ids(protected_ids, mol1, mol2):
     #     """
@@ -420,6 +420,8 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, h_dist_threshold=2, 
         rtb = 0
     logp = max_logp - MolLogP(mol) + 0.5
 
+    tpsa = max_tpsa - CalcTPSA(mol)
+
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
     if mol.HasProp('protected_user_canon_ids'):
@@ -447,7 +449,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, h_dist_threshold=2, 
 
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
-                            symmetry_fixes=True, mw=(1, mw), rtb=(0, rtb), logp=(-100, logp), **kwargs))
+                            symmetry_fixes=True, mw=(1, mw), rtb=(0, rtb), logp=(-100, logp), tpsa=(0, tpsa), **kwargs))
     except Exception:
         error_message = traceback.format_exc()
         sys.stderr.write(f'Grow error.\n'
@@ -461,7 +463,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, h_dist_threshold=2, 
     return res
 
 
-def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
@@ -474,7 +476,7 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, h_dist_threshold
     res = dict()
     protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
     for mol in mols:
-        tmp = __grow_mol(mol, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp,
+        tmp = __grow_mol(mol, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
                          h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol] = tmp
@@ -513,6 +515,7 @@ def create_db(fname):
              rtb INTEGER,
              logp REAL,
              qed REAL,
+             tpsa REAL,
              rmsd REAL,
              plif_sim REAL,
              pdb_block TEXT,
@@ -554,15 +557,16 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                     tmp = line.strip().split()
                     smi = Chem.CanonSmiles(tmp[0])
                     name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(Chem.MolFromSmiles(smi))
+                    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(Chem.MolFromSmiles(smi))
                     data.append((f'{prefix}-{name}' if prefix else name,
                                  0,
                                  smi,
                                  mol_mw,
                                  mol_rtb,
                                  mol_logp,
-                                 mol_qed))
-            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed']
+                                 mol_qed,
+                                 mol_tpsa))
+            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa']
         elif fname.lower().endswith('.sdf'):
             make_docking = False
             for i, mol in enumerate(Chem.SDMolSupplier(fname)):
@@ -577,7 +581,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                         # rdkit numeration starts with 0 and sdf numeration starts with 1
                         protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                         protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
-                    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
+                    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
                     data.append((f'{prefix}-{name}' if prefix else name,
                                  0,
                                  Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True),
@@ -585,9 +589,10 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                                  mol_rtb,
                                  mol_logp,
                                  mol_qed,
+                                 mol_tpsa,
                                  Chem.MolToMolBlock(mol),
                                  protected_user_canon_ids))
-            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'mol_block', 'protected_user_canon_ids']
+            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'mol_block', 'protected_user_canon_ids']
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
@@ -631,7 +636,7 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, max_logp, 
     return res
 
 
-def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max_logp, ntop, ranking_func, ncpu=1, **kwargs):
+def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -658,11 +663,11 @@ def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max
     for cluster in sorted_clusters:
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
-    res = __grow_mols(selected_mols, protein_pdbqt, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, ncpu=ncpu, **kwargs)
+    res = __grow_mols(selected_mols, protein_pdbqt, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, max_rtb, max_logp, ranking_func, ncpu=1, **kwargs):
+def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, max_rtb, max_logp, max_tpsa, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -692,7 +697,7 @@ def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, m
         processed_mols = 0
         for mol_id in cluster:
             tmp = __grow_mol(mol_dict[mol_id], protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp,
-                             ncpu=ncpu, **kwargs)
+                             max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
             if tmp:
                 res[mol_dict[mol_id]] = tmp
                 processed_mols += 1
@@ -722,7 +727,7 @@ def identify_pareto(df):
     return population_ids[pareto_front].tolist()
 
 
-def selection_by_pareto(mols, conn, mw, rtb, logp, protein_pdbqt, ranking_func, ncpu, **kwargs):
+def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein_pdbqt, ranking_func, ncpu, **kwargs):
     """
 
     :param mols:
@@ -750,7 +755,7 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, protein_pdbqt, ranking_func, 
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
     mols = get_mols(conn, mols_pareto)
-    res = __grow_mols(mols, protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp, ncpu=ncpu, **kwargs)
+    res = __grow_mols(mols, protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa, ncpu=ncpu, **kwargs)
     return res
 
 
@@ -811,7 +816,8 @@ def calc_properties(mol):
     rtb = CalcNumRotatableBonds(Chem.RemoveHs(mol)) # does not count things like amide or ester bonds
     logp = round(MolLogP(mol), 2)
     qed = round(QED.qed(mol), 3)
-    return mw, rtb, logp, qed
+    tpsa = round(CalcTPSA(mol), 2)
+    return mw, rtb, logp, qed, tpsa
 
 
 def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
@@ -826,7 +832,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
     :return:
     """
     data = []
-    mol_mw, mol_rtb, mol_logp, mol_qed = calc_properties(mol)
+    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
     if mol_mw <= mw and mol_rtb <= rtb and mol_logp <= logp:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
@@ -843,7 +849,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
                 child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
             data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                         parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, None, None,
+                         parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, None, None,
                          None, None, child_protected_canon_user_id, None))
     return data
 
@@ -1000,7 +1006,7 @@ def tautomer_refinement(conn, ncpu):
         return False
 
 
-def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, alg_type,
+def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type,
                    ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
                    plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
 
@@ -1026,26 +1032,27 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
             mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt,
-                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
+                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa, ranking_func=ranking_func,
                                             ncpu=ncpu, **kwargs)
             elif alg_type in [2, 3] and len(mols) <= nclust:    # if number of mols is lower than nclust grow all mols
                 res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp,
-                                  ncpu=ncpu, **kwargs)
+                                  max_tpsa=tpsa, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
                 res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
-                                                ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
-                                                ncpu=ncpu, **kwargs)
+                                                ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                                ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
                 res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
-                                           ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, ranking_func=ranking_func,
-                                           ncpu=ncpu, **kwargs)
+                                           ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                           ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
-                res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, logp=logp, protein_pdbqt=protein_pdbqt,
-                                          ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, logp=logp, tpsa=tpsa,
+                                          protein_pdbqt=protein_pdbqt, ranking_func=ranking_func, ncpu=ncpu, **kwargs)
 
     else:
         mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
-        res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp, ncpu=ncpu, **kwargs)
+        res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                          ncpu=ncpu, **kwargs)
 
     if res:
         data = []
@@ -1127,6 +1134,8 @@ def main():
                         help='maximum allowed number of rotatable bonds in a compound.')
     parser.add_argument('--logp', type=float, default=4, required=False,
                         help='maximum allowed logP of a compound.')
+    parser.add_argument('--tpsa', type=float, required=False,
+                        help='maximum allowed TPSA of a compound.')
     parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
                              'interaction which should be observed for a ligand to pass to the next iteration. Derive '
@@ -1205,7 +1214,7 @@ def main():
         while True:
             res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
                                  protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
-                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, alg_type=args.algorithm,
+                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa, alg_type=args.algorithm,
                                  ranking_func=ranking_type(args.ranking), ncpu=args.ncpu, make_docking=make_docking,
                                  db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
                                  max_atoms=args.max_atoms, max_replacements=args.max_replacements,
