@@ -3,6 +3,7 @@ import sqlite3
 import sys
 from functools import partial
 from multiprocessing import Pool, Manager
+import traceback
 
 from dask import bag
 from dask.distributed import Lock as daskLock
@@ -34,7 +35,12 @@ def mk_prepare_ligand_string(molecule_string, build_macrocycle=True, add_water=F
                                      hydrate=add_water, amide_rigid=amide_rigid)
                                      #additional parametrs
                                      #rigidify_bonds_smarts=[], rigidify_bonds_indices=[])
-    preparator.prepare(mol)
+    try:
+        preparator.prepare(mol)
+    except Exception:
+        sys.stderr.write('Warning. Incorrect mol object to convert to pdbqt. Continue.\n')
+        traceback.print_exc()
+        return None
     if verbose:
         preparator.show_setup()
 
@@ -161,6 +167,7 @@ def process_mol_docking(mol_id, smi, receptor_pdbqt_fname, center, box_size, dbn
 
     ligand_pdbqt = ligand_preparation(smi)
     if ligand_pdbqt is None:
+        sys.stderr.write(f'Warning. Molecule {mol_id}: pdbqt conversion error. Continue.\n')
         return mol_id
     score, pdbqt_out = docking(ligand_pdbqt, receptor_pdbqt_fname, center, box_size, ncpu)
     mol_block = pdbqt2molblock(pdbqt_out, smi, mol_id)
