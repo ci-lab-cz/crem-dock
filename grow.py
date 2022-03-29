@@ -820,7 +820,7 @@ def calc_properties(mol):
     return mw, rtb, logp, qed, tpsa
 
 
-def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
+def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, prefix):
     """
 
     :param parent_mol:
@@ -829,11 +829,13 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, prefix):
     :param iteration: iteration number
     :param rtb: maximum allowed number of RTB
     :param mw: maximum allowed MW
+    :param tpsa: maximum allowed TPSA
+    :param prefix: string which will be added to all names
     :return:
     """
     data = []
     mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
-    if mol_mw <= mw and mol_rtb <= rtb and mol_logp <= logp:
+    if mol_mw <= mw and mol_rtb <= rtb and mol_logp <= logp and mol_tpsa <= tpsa:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
             m = Chem.AddHs(m)
@@ -1057,8 +1059,8 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
     if res:
         data = []
         p = Pool(ncpu)
-        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, logp=logp, prefix=prefix),
-                           supply_parent_child_mols(res)):
+        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, logp=logp, tpsa=tpsa,
+                                   prefix=prefix), supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
         insert_db(conn, data=data)
@@ -1134,7 +1136,7 @@ def main():
                         help='maximum allowed number of rotatable bonds in a compound.')
     parser.add_argument('--logp', type=float, default=4, required=False,
                         help='maximum allowed logP of a compound.')
-    parser.add_argument('--tpsa', type=float, required=False,
+    parser.add_argument('--tpsa', type=float, default=120, required=False,
                         help='maximum allowed TPSA of a compound.')
     parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
