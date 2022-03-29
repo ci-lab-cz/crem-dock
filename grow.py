@@ -829,6 +829,8 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, pre
     :param iteration: iteration number
     :param rtb: maximum allowed number of RTB
     :param mw: maximum allowed MW
+    :param tpsa: maximum allowed TPSA
+    :param prefix: string which will be added to all names
     :return:
     """
     data = []
