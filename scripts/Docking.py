@@ -126,7 +126,7 @@ def docking(ligands_pdbqt_string, receptor_pdbqt_fname, center, box_size, ncpu):
     v.set_ligand_from_string(ligands_pdbqt_string)
     v.compute_vina_maps(center=center, box_size=box_size, spacing=1)
     #change n_poses
-    v.dock(exhaustiveness=8, n_poses=9)
+    v.dock(exhaustiveness=8, n_poses=50)
 
     return v.energies(n_poses=1)[0][0], v.poses(n_poses=1)
 
