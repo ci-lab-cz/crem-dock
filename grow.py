@@ -1111,6 +1111,8 @@ def main():
     parser.add_argument('--no_protonation', action='store_true', default=False,
                         help='disable protonation of molecules before docking. Protonation requires installed '
                              'cxcalc chemaxon utility.')
+    parser.add_argument('--n_iterations', default=None, type=int,
+                        help='maximum number of iterations.')
     parser.add_argument('-t', '--algorithm', default=2, type=int, choices=[1, 2, 3, 4],
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
                              'molecules from a cluster cannot be grown they will be replaced with new lower scored '
@@ -1227,6 +1229,8 @@ def main():
 
             if res:
                 iteration += 1
+                if args.n_iterations and iteration == args.n_iterations:
+                    break
             else:
                 if iteration == 1:
                     # 0 successful iteration for finally printing
