@@ -11,6 +11,7 @@ import tempfile
 import traceback
 from collections import defaultdict
 from functools import partial
+from itertools import islice
 from multiprocessing import Pool
 
 import dask
@@ -50,6 +51,30 @@ def sort_two_lists(primary, secondary, reverse=False):
     # sort two lists by order of elements of the primary list
     paired_sorted = sorted(zip(primary, secondary), key=lambda x: x[0], reverse=reverse)
     return map(list, zip(*paired_sorted))  # two lists
+
+
+def take(n, iterable):
+    return list(islice(iterable, n))
+
+
+def select_from_db(cur, sql, values):
+    """
+    It makes SELECTs by chunks and works if too many values should be returned from DB.
+    Workaround of the limitation of SQLite3 on the number of values in a query (https://www.sqlite.org/limits.html,
+    section 9).
+    :param cur: curson or connection to db
+    :param sql: SQL query, where a single question mark identify position where to insert multiple values, e.g.
+                "SELECT smi FROM mols WHERE id IN (?)". This question mark will be replaced with multiple ones.
+                So, only one such a symbol should be present in the query.
+    :param values: list of values which will substitute the question mark in the query
+    :return: generator over results retrieved from DB
+    """
+    if sql.count('?') > 1:
+        raise ValueError('SQL query should contain only one question mark.')
+    chunks = iter(partial(take, 32000, iter(values)), [])   # split values on chunks with up to 32000 items
+    for chunk in chunks:
+        for item in cur.execute(sql.replace('?', ','.join('?' * len(chunk))), chunk):
+            yield item
 
 
 def neutralize_atoms(mol):
@@ -126,10 +151,9 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='
         mol_ids = get_docked_mol_ids(conn, iteration)
         mols = get_mols(conn, mol_ids)
         # parent_ids and parent_mols can be empty if all compounds do not have parents
-        parent_ids = dict(cur.execute(f"SELECT id, parent_id "
-                                      f"FROM mols "
-                                      f"WHERE id IN ({','.join('?' * len(mol_ids))}) AND "
-                                      f"parent_id IS NOT NULL", mol_ids))
+        parent_ids = dict(select_from_db(cur,
+                                         "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
+                                         mol_ids))
         uniq_parent_ids = list(set(parent_ids.values()))
         parent_mols = get_mols(conn, uniq_parent_ids)
         parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
@@ -233,14 +257,14 @@ def get_mols(conn, mol_ids, table_name='mols'):
     """
     cur = conn.cursor()
     if table_name == 'mols':
-        sql = f'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
+        sql = 'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN (?)'
     elif table_name == 'tautomers':
-        sql = f'SELECT mol_block FROM tautomers WHERE id IN ({",".join("?" * len(mol_ids))})'
+        sql = 'SELECT mol_block FROM tautomers WHERE id IN (?)'
     else:
         raise ValueError('wrong table name was supplied')
 
     mols = []
-    for items in cur.execute(sql, mol_ids):
+    for items in select_from_db(cur, sql, mol_ids):
         m = Chem.MolFromMolBlock(items[0], removeHs=False)
         Chem.AssignAtomChiralTagsFromStructure(m)
         if not m:
@@ -260,8 +284,8 @@ def get_mol_scores(conn, mol_ids):
     :return:
     """
     cur = conn.cursor()
-    sql = f'SELECT id, docking_score FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-    return dict(cur.execute(sql, mol_ids))
+    sql = 'SELECT id, docking_score FROM mols WHERE id IN (?)'
+    return dict(select_from_db(cur, sql, mol_ids))
 
 
 def get_corrected_mol_score(conn, mol_ids):
@@ -287,8 +311,8 @@ def get_mol_qeds(conn, mol_ids):
     :return:
     """
     cur = conn.cursor()
-    sql = f'SELECT id, qed FROM mols WHERE id IN ({",".join("?" * len(mol_ids))})'
-    return dict(cur.execute(sql, mol_ids))
+    sql = 'SELECT id, qed FROM mols WHERE id IN (?)'
+    return dict(select_from_db(cur, sql, mol_ids))
 
 
 def select_top_mols(mols, conn, ntop, ranking_func):
