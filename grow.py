@@ -106,24 +106,45 @@ def add_protonation(conn, table_name='mols'):
     :return:
     '''
     cur = conn.cursor()
-    smiles_list = list(cur.execute(f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND "
-                                   f"smi_protonated is NULL"))
+    try:
+        iteration = list(cur.execute(f"SELECT max(iteration) FROM {table_name}"))[0][0]
+        add_sql = f" AND iteration={iteration}"
+    except:
+        add_sql = ""
+
+    sql = f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND smi_protonated is NULL"
+    sql += add_sql
+
+    smiles_list = list(cur.execute(sql))
     if not smiles_list:
         sys.stderr.write('no molecules to protonate in database\n')
-        return
+        return False
 
     smiles, mol_ids = zip(*smiles_list)
 
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        fd, output = tempfile.mkstemp()   # use output file to avoid overflow of stdout is extreme cases
+        fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
         try:
             tmp.writelines(['\n'.join(smiles)])
             tmp.flush()
-            cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
+            cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
-            smiles_protonated = open(output).read().split('\n')
+            sdf_protonated = Chem.SDMolSupplier(output)
         finally:
             os.remove(output)
+
+        smiles_protonated = []
+        for sdf in sdf_protonated:
+            smi = sdf.GetPropsAsDict().get('MAJORMS', None)
+            smiles_protonated.append(smi)
+
+    # fname = os.path.join('home/minibaevag/mnt/proj2/open-23-32/res_guzel/res_2btr_again/replacements_f5_radius1/',
+    #                      ''.join(random.sample(string.ascii_lowercase, 4)) + '.smi')
+    # with open(fname, 'wt') as f:
+    #     f.writelines(['\n'.join(smiles)])
+    #     cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
+    #     subprocess.call(cmd_run, shell=True)
+    #     smiles_protonated = open(fname).read().split('\n')
 
     for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
         cur.execute(f"""UPDATE {table_name}
