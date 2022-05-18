@@ -133,10 +133,10 @@ def add_protonation(conn, table_name='mols'):
         finally:
             os.remove(output)
 
-        smiles_protonated = []
-        for sdf in sdf_protonated:
-            smi = sdf.GetPropsAsDict().get('MAJORMS', None)
-            smiles_protonated.append(smi)
+    smiles_protonated = []
+    for sdf in sdf_protonated:
+        smi = sdf.GetPropsAsDict().get('MAJORMS', None)
+        smiles_protonated.append(smi)
 
     # fname = os.path.join('home/minibaevag/mnt/proj2/open-23-32/res_guzel/res_2btr_again/replacements_f5_radius1/',
     #                      ''.join(random.sample(string.ascii_lowercase, 4)) + '.smi')
