@@ -118,7 +118,7 @@ def add_protonation(conn, table_name='mols'):
     smiles_list = list(cur.execute(sql))
     if not smiles_list:
         sys.stderr.write('no molecules to protonate in database\n')
-        return False
+        return
 
     smiles, mol_ids = zip(*smiles_list)
 
