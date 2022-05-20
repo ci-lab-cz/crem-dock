@@ -775,7 +775,7 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein_pdbqt, ranking_
     mol_dict = dict(zip(mol_ids, mols))
     scores = ranking_func(conn, mol_ids)
     # needed for inverting X-axis values, so the values are arranged from largest to smallest with a minus sign
-    scores_mw = {mol_id: [score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
+    scores_mw = {mol_id: [-score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
     mols = get_mols(conn, mols_pareto)
