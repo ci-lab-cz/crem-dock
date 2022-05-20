@@ -768,7 +768,8 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein_pdbqt, ranking_
     """
     if not mols:
         return []
-    mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1 and MolLogP(mol) < logp]
+    mols = [mol for mol in mols if MolWt(mol) <= mw - 50 and CalcNumRotatableBonds(mol) <= rtb - 1 and
+            MolLogP(mol) < logp and CalcTPSA(mol) < tpsa]
     if not mols:
         return None
     mol_ids = get_mol_ids(mols)
