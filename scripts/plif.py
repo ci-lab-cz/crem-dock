@@ -70,7 +70,10 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df):
     """
     plf_prot = plf.Molecule(Chem.MolFromPDBFile(plif_protein_fname, removeHs=False, sanitize=False))
     fp = plf.Fingerprint()
-    fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot)   # danger, hope it will always keep the order of molecules
+    try:
+        fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot)   # danger, hope it will always keep the order of molecules
+    except AssertionError:  # catch multiprocessing conflict with new version of prolif
+        fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot, n_jobs=1)  # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     df = pd.concat([plif_ref_df, df]).fillna(False)
@@ -90,7 +93,10 @@ def calc_plif(mols, protein_fname, sanitize_protein):
     mol_names = [mol.GetProp('_Name') for mol in mols]
     plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=sanitize_protein))
     fp = plf.Fingerprint(['Hydrophobic', 'HBDonor', 'HBAcceptor','Anionic', 'Cationic', 'CationPi', 'PiCation', 'PiStacking', 'MetalAcceptor'])
-    fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot)   # danger, hope it will always keep the order of molecules
+    try:
+        fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot)   # danger, hope it will always keep the order of molecules
+    except AssertionError:  # catch multiprocessing conflict with new version of prolif
+        fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot, n_jobs=1)  # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     df.index = mol_names
