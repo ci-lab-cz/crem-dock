@@ -92,7 +92,8 @@ def calc_plif(mols, protein_fname, sanitize_protein):
     """
     mol_names = [mol.GetProp('_Name') for mol in mols]
     plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=sanitize_protein))
-    fp = plf.Fingerprint(['Hydrophobic', 'HBDonor', 'HBAcceptor','Anionic', 'Cationic', 'CationPi', 'PiCation', 'PiStacking', 'MetalAcceptor'])
+    fp = plf.Fingerprint(['Hydrophobic', 'HBDonor', 'HBAcceptor', 'Anionic', 'Cationic', 'CationPi', 'PiCation',
+                          'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
     try:
         fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot)   # danger, hope it will always keep the order of molecules
     except AssertionError:  # catch multiprocessing conflict with new version of prolif
