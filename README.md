@@ -25,5 +25,10 @@ Install dependencies from pip and github
 pip install vina
 pip install crem
 pip install git+https://github.com/forlilab/Meeko@7b1a60d9451eabaeb16b08a4a497cf8e695acc63
-pip install git+https://github.com/chemosim-lab/ProLIF.git
+```
+
+Install ProLIF with corrected SMARTS patterns
+```
+conda install -c conda-forge prolif
+pip install git+https://github.com/DrrDom/ProLIF.git@smarts_patterns
 ```
