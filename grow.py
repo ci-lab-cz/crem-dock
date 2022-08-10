@@ -106,31 +106,44 @@ def add_protonation(conn, table_name='mols'):
     :return:
     '''
     cur = conn.cursor()
-    smiles_list = list(cur.execute(f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND "
-                                   f"smi_protonated is NULL"))
+    try:
+        iteration = list(cur.execute(f"SELECT max(iteration) FROM {table_name}"))[0][0]
+        add_sql = f" AND iteration={iteration}"
+    except:
+        add_sql = ""
+
+    sql = f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND smi_protonated is NULL"
+    sql += add_sql
+
+    smiles_list = list(cur.execute(sql))
     if not smiles_list:
         sys.stderr.write('no molecules to protonate in database\n')
         return
 
     smiles, mol_ids = zip(*smiles_list)
-
+    data = []
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        fd, output = tempfile.mkstemp()   # use output file to avoid overflow of stdout is extreme cases
+        fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
         try:
-            tmp.writelines(['\n'.join(smiles)])
+            for data in zip(smiles, mol_ids):
+                tmp.write('%s\t%s\n' % (data[0], data[1]))
             tmp.flush()
-            cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
+            cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
-            smiles_protonated = open(output).read().split('\n')
+            sdf_protonated = Chem.SDMolSupplier(output)
+            for mol in sdf_protonated:
+                smi = mol.GetPropsAsDict().get('MAJORMS', None)
+                if smi is not None:
+                    data.append((Chem.CanonSmiles(smi), mol.GetProp('_Name')))
         finally:
             os.remove(output)
 
-    for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
+    for smi_protonated, mol_id in data:
         cur.execute(f"""UPDATE {table_name}
                        SET smi_protonated = ?
                        WHERE
                            id = ?
-                    """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
+                    """, (smi_protonated, mol_id))
     conn.commit()
 
 
