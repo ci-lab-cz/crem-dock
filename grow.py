@@ -126,7 +126,6 @@ def add_protonation(conn, table_name='mols'):
         fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
         try:
             for data in zip(smiles, mol_ids):
-                print(data)
                 tmp.write('%s\t%s\n' % (data[0], data[1]))
                 tmp.flush()
             cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
