@@ -125,33 +125,29 @@ def add_protonation(conn, table_name='mols'):
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
         fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
         try:
-            tmp.writelines(['\n'.join(smiles)])
-            tmp.flush()
+            for data in zip(smiles, mol_ids):
+                print(data)
+                tmp.write('%s\t%s\n' % (data[0], data[1]))
+                tmp.flush()
             cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
             sdf_protonated = Chem.SDMolSupplier(output)
+            smiles_protonated = []
+            names = []
+            for sdf in sdf_protonated:
+                smi = sdf.GetPropsAsDict().get('MAJORMS', None)
+                name = sdf.GetProp('_Name')
+                smiles_protonated.append(Chem.CanonSmiles(smi))
+                names.append(name)
         finally:
             os.remove(output)
 
-    smiles_protonated = []
-    for sdf in sdf_protonated:
-        smi = sdf.GetPropsAsDict().get('MAJORMS', None)
-        smiles_protonated.append(smi)
-
-    # fname = os.path.join('home/minibaevag/mnt/proj2/open-23-32/res_guzel/res_2btr_again/replacements_f5_radius1/',
-    #                      ''.join(random.sample(string.ascii_lowercase, 4)) + '.smi')
-    # with open(fname, 'wt') as f:
-    #     f.writelines(['\n'.join(smiles)])
-    #     cmd_run = f"cxcalc majormicrospecies -H 7.4 -f smiles -M -K '{fname}'"
-    #     subprocess.call(cmd_run, shell=True)
-    #     smiles_protonated = open(fname).read().split('\n')
-
-    for mol_id, smi_protonated in zip(mol_ids, smiles_protonated):
+    for mol_id, smi_protonated in zip(names, smiles_protonated):
         cur.execute(f"""UPDATE {table_name}
                        SET smi_protonated = ?
                        WHERE
                            id = ?
-                    """, (Chem.MolToSmiles(Chem.MolFromSmiles(smi_protonated), isomericSmiles=True), mol_id))
+                    """, (smi_protonated, mol_id))
     conn.commit()
 
 
