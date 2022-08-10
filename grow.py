@@ -121,7 +121,7 @@ def add_protonation(conn, table_name='mols'):
         return
 
     smiles, mol_ids = zip(*smiles_list)
-
+    data = []
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
         fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
         try:
@@ -131,7 +131,6 @@ def add_protonation(conn, table_name='mols'):
             cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
             sdf_protonated = Chem.SDMolSupplier(output)
-            data = []
             for mol in sdf_protonated:
                 smi = mol.GetPropsAsDict().get('MAJORMS', None)
                 if smi is not None:
