@@ -121,7 +121,7 @@ def add_protonation(conn, table_name='mols'):
         return
 
     smiles, mol_ids = zip(*smiles_list)
-    data = []
+    output_data = []
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
         fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
         try:
@@ -134,11 +134,11 @@ def add_protonation(conn, table_name='mols'):
             for mol in sdf_protonated:
                 smi = mol.GetPropsAsDict().get('MAJORMS', None)
                 if smi is not None:
-                    data.append((Chem.CanonSmiles(smi), mol.GetProp('_Name')))
+                    output_data.append((Chem.CanonSmiles(smi), mol.GetProp('_Name')))
         finally:
             os.remove(output)
 
-    for smi_protonated, mol_id in data:
+    for smi_protonated, mol_id in output_data:
         cur.execute(f"""UPDATE {table_name}
                        SET smi_protonated = ?
                        WHERE
