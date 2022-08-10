@@ -127,21 +127,19 @@ def add_protonation(conn, table_name='mols'):
         try:
             for data in zip(smiles, mol_ids):
                 tmp.write('%s\t%s\n' % (data[0], data[1]))
-                tmp.flush()
+            tmp.flush()
             cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
             sdf_protonated = Chem.SDMolSupplier(output)
-            smiles_protonated = []
-            names = []
-            for sdf in sdf_protonated:
-                smi = sdf.GetPropsAsDict().get('MAJORMS', None)
-                name = sdf.GetProp('_Name')
-                smiles_protonated.append(Chem.CanonSmiles(smi))
-                names.append(name)
+            data = []
+            for mol in sdf_protonated:
+                smi = mol.GetPropsAsDict().get('MAJORMS', None)
+                if smi is not None:
+                    data.append((Chem.CanonSmiles(smi), mol.GetProp('_Name')))
         finally:
             os.remove(output)
 
-    for mol_id, smi_protonated in zip(names, smiles_protonated):
+    for smi_protonated, mol_id in data:
         cur.execute(f"""UPDATE {table_name}
                        SET smi_protonated = ?
                        WHERE
