@@ -44,7 +44,8 @@ def filter_by_plif(mols, plif_ref, protein_fname, threshold=1):
     if len(mols) == 0:
         return []
     prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=False))
-    fp = plf.Fingerprint()
+    fp = plf.Fingerprint(['Hydrophobic', 'HBDonor', 'HBAcceptor', 'Anionic', 'Cationic', 'CationPi', 'PiCation',
+                          'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
     fp.run_from_iterable((plf.Molecule.from_rdkit(mol) for mol in mols), prot)   # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
