@@ -29,7 +29,7 @@ from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
 
-from scripts import Docking, plif
+from scripts import plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
 from moldock import vina_dock, gnina_dock, preparation_for_docking
