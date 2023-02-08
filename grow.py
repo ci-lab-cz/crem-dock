@@ -1209,7 +1209,7 @@ def main():
                              'This parameter seems affect docking results to find better top pose.')
     parser.add_argument('--docking', default='vina', type=str, choices=['vina', 'gnina'],
                         help='the type of the docking.')
-    parser.add_argument('--install_dir', metavar='DIRNAME', type=filepath_type, required=True,
+    parser.add_argument('--install_dir', metavar='DIRNAME', type=filepath_type, required=False,
                         help='path to the dir with installed GNINA.')
     parser.add_argument('--scoring', metavar='STRING', required=False, default='vina',
                         choices=['ad4_scoring', 'default', 'dkoes_fast', 'dkoes_scoring', 'dkoes_scoring_old', 'vina',
