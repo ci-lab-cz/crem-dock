@@ -32,7 +32,7 @@ from sklearn.cluster import KMeans
 from scripts import Docking, plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
-from moldock import vina_docking, gnina_docking, preparation_for_docking
+from moldock import vina_dock, gnina_dock, preparation_for_docking
 
 def ranking_type(x):
     ranking_types = {1: ranking_by_docking_score,
@@ -1048,7 +1048,7 @@ def tautomer_refinement(conn, ncpu):
 
 
 def make_iteration(dbname, iteration, protein_pdbqt, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type,
-                   ranking_func, ncpu, protonation, type_docking, make_docking=True, plif_list=None,
+                   ranking_func, ncpu, protonation, docking_func, make_docking=True, plif_list=None,
                    plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -1057,7 +1057,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, ntop, nclust, mw, rmsd, rtb
         # add_protonation(conn=conn)
         preparation_for_docking.add_protonation(conn=conn)
     if make_docking:
-        type_docking(add_sql=f'iteration={iteration - 1}', table_name='mols')
+        docking_func(add_sql=f'iteration={iteration - 1}', table_name='mols')
         update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
 
         res = []
@@ -1112,7 +1112,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, ntop, nclust, mw, rmsd, rtb
         if check:
             if protonation:
                 preparation_for_docking.add_protonation(conn=conn, table_name='tautomers')
-            type_docking(table_name='tautomers')
+            docking_func(table_name='tautomers')
             update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
         return False
 
@@ -1256,12 +1256,12 @@ def main():
         tmpdir = args.tmpdir
 
     if args.docking == 'vina':
-        func = partial(vina_docking.iter_docking, dbname=args.output, receptor_pdbqt_fname=args.protein,
+        func = partial(vina_dock.iter_docking, dbname=args.output, receptor_pdbqt_fname=args.protein,
                        protein_setup=args.protein_setup, protonation=not args.no_protonation, exhaustiveness=args.exhaustiveness,
                        seed=args.seed, n_poses=args.n_poses, ncpu=args.ncpu, use_dask=args.hostfile is not None)
     elif args.docking =='gnina':
         gnina_script_dir = os.path.join(args.install_dir, 'gnina')
-        func = partial(gnina_docking.iter_docking, script_file=gnina_script_dir, tmpdir=tmpdir, dbname=args.output,
+        func = partial(gnina_dock.iter_docking, script_file=gnina_script_dir, tmpdir=tmpdir, dbname=args.output,
                        receptor_pdbqt_fname=args.protein, protein_setup=args.protein_setup, protonation=not args.no_protonation,
                        exhaustiveness=args.exhaustiveness, seed=args.seed, scoring=args.scoring, addH=args.addH,
                        cnn_scoring=args.cnn_scoring, cnn=args.cnn, ncpu=args.ncpu, use_dask=args.hostfile is not None)
@@ -1296,7 +1296,7 @@ def main():
                                  max_atoms=args.max_atoms, max_replacements=args.max_replacements,
                                  protonation=not args.no_protonation, use_dask=args.hostfile is not None,
                                  plif_list=args.plif, plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff,
-                                 prefix=args.prefix, type_docking=func)
+                                 prefix=args.prefix, docking_func=func)
             make_docking = True
 
             if res:
