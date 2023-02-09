@@ -1055,7 +1055,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, ntop, nclust, mw, rmsd, rtb
     conn = sqlite3.connect(dbname)
     if protonation:
         # add_protonation(conn=conn)
-        preparation_for_docking.add_protonation(conn=conn)
+        preparation_for_docking.add_protonation(db_fname=dbname)
     if make_docking:
         docking_func(add_sql=f'iteration={iteration - 1}', table_name='mols')
         update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
