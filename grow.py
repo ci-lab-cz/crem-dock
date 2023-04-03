@@ -29,6 +29,8 @@ from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
 
+from moldock import preparation_for_docking
+
 from scripts import Docking, plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
@@ -532,34 +534,25 @@ def insert_db(conn, data, cols=None, table_name='mols'):
         conn.commit()
 
 
-def create_db(fname):
-    p = os.path.dirname(fname)
-    if p:  # if p is "" (current dir) the error will occur
-        os.makedirs(os.path.dirname(fname), exist_ok=True)
+def create_db(fname, args):
+    """
+    Creates a DB using the corresponding function from moldock and adds some new columns and a table to it
+    :param fname:
+    :param args:
+    :return:
+    """
+    preparation_for_docking.create_db(fname, args, ('protein', 'protein_setup'))
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     # cur.execute("PRAGMA journal_mode=WAL")
-    cur.execute("DROP TABLE IF EXISTS mols")
-    cur.execute("""CREATE TABLE IF NOT EXISTS mols
-            (
-             id TEXT PRIMARY KEY,
-             iteration INTEGER,
-             smi TEXT NOT NULL UNIQUE,
-             smi_protonated TEXT,
-             parent_id TEXT,
-             docking_score REAL,
-             mw REAL,
-             rtb INTEGER,
-             logp REAL,
-             qed REAL,
-             tpsa REAL,
-             rmsd REAL,
-             plif_sim REAL,
-             pdb_block TEXT,
-             mol_block TEXT,
-             protected_user_canon_ids TEXT DEFAULT NULL,
-             time TEXT
-            )""")
+    cur.execute("ALTER TABLE mols ADD iteration INTEGER")
+    cur.execute("ALTER TABLE mols ADD parent_id TEXT")
+    cur.execute("ALTER TABLE mols ADD mw REAL")
+    cur.execute("ALTER TABLE mols ADD rtb INTEGER")
+    cur.execute("ALTER TABLE mols ADD logp REAL")
+    cur.execute("ALTER TABLE mols ADD rmsd REAL")
+    cur.execute("ALTER TABLE mols ADD plif_sim REAL")
+    cur.execute("ALTER TABLE mols ADD protected_user_canon_ids TEXT DEFAULT NULL")
     cur.execute("""CREATE TABLE IF NOT EXISTS tautomers
             (
              id TEXT PRIMARY KEY,
@@ -1111,8 +1104,8 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
         if check:
             if protonation:
                 add_protonation(conn=conn, table_name='tautomers')
-            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt,
+                                 protein_setup=protein_setup, protonation=protonation, use_dask=use_dask, ncpu=ncpu)
             update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
         return False
 
@@ -1181,7 +1174,7 @@ def main():
     parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
                              'interaction which should be observed for a ligand to pass to the next iteration. Derive '
-                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG.A.Hydrophobic.')
+                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
     parser.add_argument('--plif_protein', metavar='protein.pdb', default=None, required=False, type=filepath_type,
                         help='PDB file with the same protein as for docking but containing all hydrogens. Required to '
                              'identify protein-ligand interaction fingerprints.')
@@ -1202,6 +1195,23 @@ def main():
                         help='number of cpus.')
 
     args = parser.parse_args()
+
+    # depending on input setup operations applied on the first iteration
+    # input      make_docking & make_selection
+    # SMILES                              True
+    # 3D SDF                             False
+    # existed DB                          True
+    if os.path.isfile(args.output):
+        args.__dict__ = preparation_for_docking.restore_setup_from_db(args.output)
+        # make_docking = True
+        # iteration = get_last_iter_from_db(args.output)
+        # if iteration is None:
+        #     raise IOError("The last iteration could not be retrieved from the database. Please check it.")
+    else:
+        create_db(args.output, args)
+        # make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
+
+    exit()
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
@@ -1235,20 +1245,7 @@ def main():
     os.makedirs(tmpdir, exist_ok=True)
     iteration = 1
 
-    # depending on input setup operations applied on the first iteration
-    # input      make_docking & make_selection
-    # SMILES                              True
-    # 3D SDF                             False
-    # existed DB                          True
     try:
-        if os.path.isfile(args.output):
-            make_docking = True
-            iteration = get_last_iter_from_db(args.output)
-            if iteration is None:
-                raise IOError("The last iteration could not be retrieved from the database. Please check it.")
-        else:
-            create_db(args.output)
-            make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
 
         with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
             json.dump(vars(args), f, sort_keys=True, indent=2)
