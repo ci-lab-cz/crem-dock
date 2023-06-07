@@ -1,5 +1,4 @@
 import argparse
-import json
 import os
 import random
 import shutil
@@ -14,11 +13,9 @@ from functools import partial
 from itertools import islice
 from multiprocessing import Pool
 
-import dask
 import numpy as np
 import pandas as pd
 from crem.crem import grow_mol
-from dask.distributed import Client
 from rdkit import Chem
 from rdkit.Chem import AllChem, QED
 from rdkit.Chem.Crippen import MolLogP
@@ -28,8 +25,8 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcFractionCSP3,
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
-
-from moldock import preparation_for_docking
+from easydock import preparation_for_docking, vina_dock
+from easydock.run_dock import get_supplied_args, docking
 
 from scripts import Docking, plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
@@ -534,14 +531,14 @@ def insert_db(conn, data, cols=None, table_name='mols'):
         conn.commit()
 
 
-def create_db(fname, args):
+def create_db(fname, args, args_to_save):
     """
     Creates a DB using the corresponding function from moldock and adds some new columns and a table to it
     :param fname:
     :param args:
     :return:
     """
-    preparation_for_docking.create_db(fname, args, ('protein', 'protein_setup'))
+    preparation_for_docking.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     # cur.execute("PRAGMA journal_mode=WAL")
@@ -1039,18 +1036,25 @@ def tautomer_refinement(conn, ncpu):
         return False
 
 
-def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type,
-                   ranking_func, ncpu, protonation, make_docking=True, use_dask=False, plif_list=None,
-                   plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
+def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type, ranking_func, ncpu,
+                   protonation, make_docking=True, dask_client=None, plif_list=None, plif_protein=None, plif_cutoff=1,
+                   prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
-    conn = sqlite3.connect(dbname)
     if protonation:
-        add_protonation(conn=conn)
+        preparation_for_docking.add_protonation(dbname, add_sql='AND iteration=MAX(iteration)')
+    conn = sqlite3.connect(dbname)
     if make_docking:
-        Docking.iter_docking(dbname=dbname, table_name='mols', receptor_pdbqt_fname=protein_pdbqt, protein_setup=protein_setup,
-                             protonation=protonation, use_dask=use_dask, ncpu=ncpu)
-        update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
+
+        mols = preparation_for_docking.select_mols_to_dock(conn, add_sql='AND iteration=MAX(iteration)')
+        for mol_id, res in docking(mols,
+                                   dock_func=mol_dock_func,
+                                   dock_config=config,
+                                   priority_func=priority_func,
+                                   ncpu=ncpu,
+                                   dask_client=dask_client):
+            if res:
+                preparation_for_docking.update_db(conn, mol_id, res)
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
@@ -1105,7 +1109,7 @@ def make_iteration(dbname, iteration, protein_pdbqt, protein_setup, ntop, nclust
             if protonation:
                 add_protonation(conn=conn, table_name='tautomers')
             Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt,
-                                 protein_setup=protein_setup, protonation=protonation, use_dask=use_dask, ncpu=ncpu)
+                                 protein_setup=protein_setup, protonation=protonation, use_dask=dask_client, ncpu=ncpu)
             update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
         return False
 
@@ -1202,14 +1206,25 @@ def main():
     # 3D SDF                             False
     # existed DB                          True
     if os.path.isfile(args.output):
-        args.__dict__ = preparation_for_docking.restore_setup_from_db(args.output)
-        # make_docking = True
-        # iteration = get_last_iter_from_db(args.output)
-        # if iteration is None:
-        #     raise IOError("The last iteration could not be retrieved from the database. Please check it.")
+        args_dict, tmpfiles = preparation_for_docking.restore_setup_from_db(args.output)
+        # this will ignore stored values of those args which were supplied via command line
+        # command line args have precedence over stored ones
+        for arg in get_supplied_args(parser):
+            del args_dict[arg]
+        args.__dict__.update(args_dict)
+        iteration = get_last_iter_from_db(args.output)
+        if iteration is None:
+            raise IOError("The last iteration could not be retrieved from the database. Please check it.")
+        #todo write function for checking mol_block is not NULL
+        if iteration == 1 and :
+            make_docking = False
+        else:
+            make_docking = True
+
     else:
-        create_db(args.output, args)
-        # make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
+        create_db(args.output, args, args_to_save=['plif_protein'])
+        make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
+        iteration = 1
 
     exit()
 
@@ -1224,18 +1239,17 @@ def main():
                                 'Calculation was aborted.')
 
     if args.hostfile is not None:
-        dask.config.set({'distributed.scheduler.allowed-failures': 30})
-        dask_client = Client(open(args.hostfile).readline().strip() + ':8786')
-        tmpdir = tempfile.mkdtemp()
-        try:
-            tmparchive = os.path.join(tmpdir, 'archive')
-            shutil.make_archive(tmparchive, 'zip',
-                                root_dir=os.path.dirname(os.path.abspath(__file__)),
-                                base_dir='scripts')
-            dask_client.upload_file(tmparchive + '.zip')
-        finally:
-            shutil.rmtree(tmpdir)
+        #import dask
+        from dask.distributed import Client
 
+        with open(args.hostfile) as f:
+            hosts = [line.strip() for line in f]
+        dask_client = Client(hosts[0] + ':8786', connection_limit=2048)
+        # dask_client = Client()   # to test dask locally
+    else:
+        dask_client = None
+
+    #todo check tmpdir is neseccary
     if args.tmpdir is None:
         tmpdir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(args.output)),
                                               ''.join(random.sample(string.ascii_lowercase, 6))))
@@ -1243,23 +1257,22 @@ def main():
         tmpdir = args.tmpdir
 
     os.makedirs(tmpdir, exist_ok=True)
-    iteration = 1
 
     try:
 
-        with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
-            json.dump(vars(args), f, sort_keys=True, indent=2)
-
+        # with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
+        #     json.dump(vars(args), f, sort_keys=True, indent=2)
+        from easydock.vina_dock import mol_dock, pred_dock_time
         while True:
-            res = make_iteration(dbname=args.output, iteration=iteration, protein_pdbqt=args.protein,
-                                 protein_setup=args.protein_setup, ntop=args.ntop, nclust=args.nclust,
-                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa, alg_type=args.algorithm,
-                                 ranking_func=ranking_type(args.ranking), ncpu=args.ncpu, make_docking=make_docking,
-                                 db_name=args.db, radius=args.radius, min_freq=args.min_freq, min_atoms=args.min_atoms,
-                                 max_atoms=args.max_atoms, max_replacements=args.max_replacements,
-                                 protonation=not args.no_protonation, use_dask=args.hostfile is not None,
-                                 plif_list=args.plif, plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff,
-                                 prefix=args.prefix)
+            res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
+                                 priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
+                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
+                                 alg_type=args.algorithm, ranking_func=ranking_type(args.ranking), ncpu=args.ncpu,
+                                 protonation=not args.no_protonation, make_docking=make_docking,
+                                 dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
+                                 plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
+                                 min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
+                                 max_replacements=args.max_replacements)
             make_docking = True
 
             if res:
