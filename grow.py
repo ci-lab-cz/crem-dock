@@ -546,6 +546,8 @@ def create_db(fname, args, args_to_save):
     cur.execute("ALTER TABLE mols ADD mw REAL")
     cur.execute("ALTER TABLE mols ADD rtb INTEGER")
     cur.execute("ALTER TABLE mols ADD logp REAL")
+    cur.execute("ALTER TABLE mols ADD qed REAL")
+    cur.execute("ALTER TABLE mols ADD tpsa REAL")
     cur.execute("ALTER TABLE mols ADD rmsd REAL")
     cur.execute("ALTER TABLE mols ADD plif_sim REAL")
     cur.execute("ALTER TABLE mols ADD protected_user_canon_ids TEXT DEFAULT NULL")
