@@ -1119,7 +1119,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 def check_molblock_isnull(dbname):
     conn = sqlite3.connect(dbname)
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM mols WHERE molblock IS NULL")
+    cur.execute("SELECT COUNT(*) FROM mols WHERE mol_block IS NULL")
     result = cur.fetchone()[0]
     if result == 0:
         return False
