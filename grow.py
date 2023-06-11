@@ -96,56 +96,6 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def add_protonation(conn, table_name='mols'):
-    '''
-    Protonate SMILES by Chemaxon cxcalc utility to get molecule ionization states at pH 7.4.
-    Parse output and update db.
-    :param conn:
-    :param table_name:
-    :return:
-    '''
-    cur = conn.cursor()
-    try:
-        iteration = list(cur.execute(f"SELECT max(iteration) FROM {table_name}"))[0][0]
-        add_sql = f" AND iteration={iteration}"
-    except:
-        add_sql = ""
-
-    sql = f"SELECT smi, id FROM {table_name} WHERE docking_score is NULL AND smi_protonated is NULL"
-    sql += add_sql
-
-    smiles_list = list(cur.execute(sql))
-    if not smiles_list:
-        sys.stderr.write('no molecules to protonate in database\n')
-        return
-
-    smiles, mol_ids = zip(*smiles_list)
-    output_data = []
-    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        fd, output = tempfile.mkstemp()  # use output file to avoid overflow of stdout is extreme cases
-        try:
-            for data in zip(smiles, mol_ids):
-                tmp.write('%s\t%s\n' % (data[0], data[1]))
-            tmp.flush()
-            cmd_run = f"cxcalc -S majormicrospecies -H 7.4 -f smiles -M -K '{tmp.name}' > '{output}'"
-            subprocess.call(cmd_run, shell=True)
-            sdf_protonated = Chem.SDMolSupplier(output)
-            for mol in sdf_protonated:
-                smi = mol.GetPropsAsDict().get('MAJORMS', None)
-                if smi is not None:
-                    output_data.append((Chem.CanonSmiles(smi), mol.GetProp('_Name')))
-        finally:
-            os.remove(output)
-
-    for smi_protonated, mol_id in output_data:
-        cur.execute(f"""UPDATE {table_name}
-                       SET smi_protonated = ?
-                       WHERE
-                           id = ?
-                    """, (smi_protonated, mol_id))
-    conn.commit()
-
-
 def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='mols'):
     """
     Post-process all docked molecules from an individual iteration.
