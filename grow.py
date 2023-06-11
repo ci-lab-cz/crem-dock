@@ -1150,8 +1150,6 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True, type=filepath_type,
-                        help='input text file with Vina docking setup.')
     parser.add_argument('--no_protonation', action='store_true', default=False,
                         help='disable protonation of molecules before docking. Protonation requires installed '
                              'cxcalc chemaxon utility.')
@@ -1203,6 +1201,15 @@ def main():
                              'which will be analyzed together.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
+    parser.add_argument('--config', metavar='FILENAME', required=False,
+                        help='YAML file with parameters used by docking program.\n'
+                             'vina.yml\n'
+                             'protein: path to pdbqt file with a protein\n'
+                             'protein_setup: path to a text file with coordinates of a binding site\n'
+                             'exhaustiveness: 8\n'
+                             'n_poses: 10\n'
+                             'seed: -1\n'
+                             'gnina.yml\n')
 
     args = parser.parse_args()
 
@@ -1228,7 +1235,7 @@ def main():
             make_docking = True
 
     else:
-        create_db(args.output, args, args_to_save=['plif_protein'])
+        create_db(args.output, args, args_to_save=['protein_h'])
         make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
 
@@ -1255,14 +1262,6 @@ def main():
     else:
         dask_client = None
 
-    #todo check tmpdir is neseccary
-    if args.tmpdir is None:
-        tmpdir = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(args.output)),
-                                              ''.join(random.sample(string.ascii_lowercase, 6))))
-    else:
-        tmpdir = args.tmpdir
-
-    os.makedirs(tmpdir, exist_ok=True)
 
     try:
 
@@ -1292,8 +1291,6 @@ def main():
                 break
 
     finally:
-        if args.tmpdir is None:
-            shutil.rmtree(tmpdir, ignore_errors=True)
         sys.stderr.write(f'{iteration} iterations were completed successfully\n')
 
 
