@@ -192,7 +192,6 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='
         mol_ids = [i[0] for i in mol_ids]
         mols = get_mols(conn, mol_ids, table_name='tautomers')
 
-
     # update plif
     if plif_ref is not None:
         pool = Pool(ncpu)
@@ -1037,7 +1036,7 @@ def tautomer_refinement(conn, ncpu):
 
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type, ranking_func, ncpu,
-                   protonation, make_docking=True, dask_client=None, plif_list=None, plif_protein=None, plif_cutoff=1,
+                   protonation, make_docking=True, dask_client=None, plif_list=None, protein_h=None, plif_cutoff=1,
                    prefix=None, **kwargs):
 
     sys.stderr.write(f'iteration {iteration} started\n')
@@ -1055,6 +1054,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    dask_client=dask_client):
             if res:
                 preparation_for_docking.update_db(conn, mol_id, res)
+                update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
@@ -1068,27 +1068,27 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         else:
             mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
-                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_pdbqt,
+                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_h,
                                             ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa, ranking_func=ranking_func,
                                             ncpu=ncpu, **kwargs)
             elif alg_type in [2, 3] and len(mols) <= nclust:    # if number of mols is lower than nclust grow all mols
-                res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp,
+                res = __grow_mols(mols=mols, protein_pdbqt=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                   max_tpsa=tpsa, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
-                res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
+                res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_h,
                                                 ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                 ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
-                res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_pdbqt,
+                res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_h,
                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                            ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, logp=logp, tpsa=tpsa,
-                                          protein_pdbqt=protein_pdbqt, ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                                          protein_pdbqt=protein_h, ranking_func=ranking_func, ncpu=ncpu, **kwargs)
 
     else:
         mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
-        res = __grow_mols(mols=mols, protein_pdbqt=protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+        res = __grow_mols(mols=mols, protein_pdbqt=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                           ncpu=ncpu, **kwargs)
 
     if res:
@@ -1108,9 +1108,9 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         if check:
             if protonation:
                 add_protonation(conn=conn, table_name='tautomers')
-            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_pdbqt,
+            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_h,
                                  protein_setup=protein_setup, protonation=protonation, use_dask=dask_client, ncpu=ncpu)
-            update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu, table_name='tautomers')
+            update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu, table_name='tautomers')
         return False
 
 
@@ -1280,7 +1280,7 @@ def main():
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.algorithm, ranking_func=ranking_type(args.ranking), ncpu=args.ncpu,
                                  protonation=not args.no_protonation, make_docking=make_docking,
-                                 dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
+                                 dask_client=dask_client, plif_list=args.plif, protein_h=args.plif_protein,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements)
