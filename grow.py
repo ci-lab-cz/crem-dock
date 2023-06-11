@@ -930,52 +930,52 @@ def ranking_by_num_heavy_atoms_FCsp3_BM(conn, mol_ids):
     return stat_scores
 
 
-def tautomer_refinement(conn, ncpu):
-    cur = conn.cursor()
-    smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
-
-    if not smiles_dict:
-        sys.stderr.write('There are no molecules in database after growing\n')
-        return False
-
-    smiles, mol_ids = zip(*iter(smiles_dict.items()))
-
-    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
-        fd, output = tempfile.mkstemp()
-        try:
-            tmp.writelines(['\n'.join(smiles)])
-            tmp.flush()
-            cmd_run = f"cxcalc -S majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
-            subprocess.call(cmd_run, shell=True)
-            tautomers = Chem.SDMolSupplier(output)
-        finally:
-            os.remove(output)
-
-    data = list()
-    for smi, tautomer, id_ in zip(smiles, tautomers, mol_ids):
-        stable_tautomer = tautomer.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
-        if stable_tautomer is not None:
-            tautomer_smi = Chem.CanonSmiles(stable_tautomer)
-            if tautomer_smi != smi:
-                data.append((id_, tautomer_smi))
-
-    if data:
-        cols = ['id', 'smi']
-        insert_db(conn, data, cols, table_name='tautomers')
-
-        cur.execute("""UPDATE tautomers
-                           SET 
-                              docking_score = mols.docking_score,
-                              duplicate = mols.id
-                           FROM
-                              mols
-                           WHERE
-                               mols.smi = tautomers.smi
-                        """)
-        conn.commit()
-        return True
-    else:
-        return False
+# def tautomer_refinement(conn, ncpu):
+#     cur = conn.cursor()
+#     smiles_dict = dict(cur.execute("SELECT smi, id FROM mols WHERE iteration != 0"))
+#
+#     if not smiles_dict:
+#         sys.stderr.write('There are no molecules in database after growing\n')
+#         return False
+#
+#     smiles, mol_ids = zip(*iter(smiles_dict.items()))
+#
+#     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+#         fd, output = tempfile.mkstemp()
+#         try:
+#             tmp.writelines(['\n'.join(smiles)])
+#             tmp.flush()
+#             cmd_run = f"cxcalc -S majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
+#             subprocess.call(cmd_run, shell=True)
+#             tautomers = Chem.SDMolSupplier(output)
+#         finally:
+#             os.remove(output)
+#
+#     data = list()
+#     for smi, tautomer, id_ in zip(smiles, tautomers, mol_ids):
+#         stable_tautomer = tautomer.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
+#         if stable_tautomer is not None:
+#             tautomer_smi = Chem.CanonSmiles(stable_tautomer)
+#             if tautomer_smi != smi:
+#                 data.append((id_, tautomer_smi))
+#
+#     if data:
+#         cols = ['id', 'smi']
+#         insert_db(conn, data, cols, table_name='tautomers')
+#
+#         cur.execute("""UPDATE tautomers
+#                            SET
+#                               docking_score = mols.docking_score,
+#                               duplicate = mols.id
+#                            FROM
+#                               mols
+#                            WHERE
+#                                mols.smi = tautomers.smi
+#                         """)
+#         conn.commit()
+#         return True
+#     else:
+#         return False
 
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type, ranking_func, ncpu,
