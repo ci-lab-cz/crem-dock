@@ -518,18 +518,6 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, max_tpsa, h_dist
     return res
 
 
-def insert_db(conn, data, cols=None, table_name='mols'):
-    if data:
-        cur = conn.cursor()
-        ncols = len(data[0])
-        if cols is None:
-            cur.executemany(f"INSERT OR IGNORE INTO {table_name} VAlUES({','.join('?' * ncols)})", data)
-        else:
-            cols = ', '.join(cols)
-            cur.executemany(f"INSERT OR IGNORE INTO {table_name} ({cols}) VAlUES({','.join('?' * ncols)})", data)
-        conn.commit()
-
-
 def create_db(fname, args, args_to_save):
     """
     Creates a DB using the corresponding function from moldock and adds some new columns and a table to it
@@ -577,7 +565,6 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
     """
     data = []
     make_docking = True
-    conn = sqlite3.connect(db_fname)
     try:
         if fname.lower().endswith('.smi') or fname.lower().endswith('.smiles'):
             with open(fname) as f:
@@ -624,9 +611,10 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
         else:
             raise ValueError('input file with fragments has unrecognizable extension. '
                              'Only SMI, SMILES and SDF are allowed.')
-        insert_db(conn, data, cols)
     finally:
-        conn.close()
+        ...
+    for data_ in data:
+        preparation_for_docking.insert_db(db_fname, data=data_, cols=cols)
     return make_docking
 
 
@@ -879,9 +867,12 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, pre
                 child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
                 child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
 
-            data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-                         parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, None, None,
-                         None, None, child_protected_canon_user_id, None))
+            # data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
+            #              parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, None, None,
+            #              None, None, child_protected_canon_user_id, None))
+            data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True),
+                         parent_mol.GetProp('_Name'), mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa,
+                         child_protected_canon_user_id))
     return data
 
 
@@ -1100,7 +1091,9 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    prefix=prefix), supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
-        insert_db(conn, data=data)
+        cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
+        for data_ in data:
+            preparation_for_docking.insert_db(dbname, data=data_, cols=cols)
         return True
 
     else:
