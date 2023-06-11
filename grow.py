@@ -1043,11 +1043,11 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
-        preparation_for_docking.add_protonation(dbname, add_sql='AND iteration=MAX(iteration)')
+        preparation_for_docking.add_protonation(dbname, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     conn = sqlite3.connect(dbname)
     if make_docking:
 
-        mols = preparation_for_docking.select_mols_to_dock(conn, add_sql='AND iteration=MAX(iteration)')
+        mols = preparation_for_docking.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -1241,7 +1241,7 @@ def main():
         make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
 
-    exit()
+    # exit()
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
@@ -1249,7 +1249,7 @@ def main():
                          'computations.\n')
         sys.stderr.flush()
 
-    if args.plif is not None and (args.plif_protein is None or not os.path.isfile(args.plif_protein)):
+    if args.plif is not None and (args.protein_h is None or not os.path.isfile(args.protein_h)):
         raise FileNotFoundError('PLIF pattern was specified but the protein file is missing or was not supplied. '
                                 'Calculation was aborted.')
 
@@ -1276,7 +1276,7 @@ def main():
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.algorithm, ranking_func=ranking_type(args.ranking), ncpu=args.ncpu,
                                  protonation=not args.no_protonation, make_docking=make_docking,
-                                 dask_client=dask_client, plif_list=args.plif, protein_h=args.plif_protein,
+                                 dask_client=dask_client, plif_list=args.plif, protein_h=args.protein_h,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements)
