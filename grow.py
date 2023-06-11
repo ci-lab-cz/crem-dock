@@ -28,7 +28,7 @@ from sklearn.cluster import KMeans
 from easydock import preparation_for_docking, vina_dock
 from easydock.run_dock import get_supplied_args, docking
 
-from scripts import Docking, plif
+from scripts import plif
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 
 
