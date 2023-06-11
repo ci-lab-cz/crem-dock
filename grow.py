@@ -1103,14 +1103,14 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 
     else:
         sys.stderr.write('Growth has stopped\n')
-        conn = sqlite3.connect(dbname)
-        check = tautomer_refinement(conn=conn, ncpu=ncpu)
-        if check:
-            if protonation:
-                add_protonation(conn=conn, table_name='tautomers')
-            Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_h,
-                                 protein_setup=protein_setup, protonation=protonation, use_dask=dask_client, ncpu=ncpu)
-            update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu, table_name='tautomers')
+        # conn = sqlite3.connect(dbname)
+        # check = tautomer_refinement(conn=conn, ncpu=ncpu)
+        # if check:
+        #     if protonation:
+        #         add_protonation(conn=conn, table_name='tautomers')
+        #     Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_h,
+        #                          protein_setup=protein_setup, protonation=protonation, use_dask=dask_client, ncpu=ncpu)
+        #     update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu, table_name='tautomers')
         return False
 
 
@@ -1150,8 +1150,6 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('-p', '--protein', metavar='protein.pdbqt', required=True, type=filepath_type,
-                        help='input PDBQT file with a prepared protein.')
     parser.add_argument('-s', '--protein_setup', metavar='protein.log', required=True, type=filepath_type,
                         help='input text file with Vina docking setup.')
     parser.add_argument('--no_protonation', action='store_true', default=False,
@@ -1190,14 +1188,11 @@ def main():
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
                              'interaction which should be observed for a ligand to pass to the next iteration. Derive '
                              'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
-    parser.add_argument('--plif_protein', metavar='protein.pdb', default=None, required=False, type=filepath_type,
+    parser.add_argument('--protein_h', metavar='protein.pdb', required=True, type=filepath_type,
                         help='PDB file with the same protein as for docking but containing all hydrogens. Required to '
                              'identify protein-ligand interaction fingerprints.')
     parser.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
                         help='cutoff of Tversky similarity, value between 0 and 1.')
-    parser.add_argument('--tmpdir', metavar='DIRNAME', default=None, type=filepath_type,
-                        help='directory where temporary files will be stored. If omitted tmp dir will be created in '
-                             'the same location as output DB.')
     parser.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
                         help='text file with addresses of nodes of dask SSH cluster. The most typical, it can be '
                              'passed as $PBS_NODEFILE variable from inside a PBS script. The first line in this file '
