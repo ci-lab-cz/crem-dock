@@ -1114,6 +1114,17 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         return False
 
 
+def check_molblock_isnull(dbname):
+    conn = sqlite3.connect(dbname)
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM mols WHERE molblock IS NULL")
+    result = cur.fetchone()[0]
+    if result == 0:
+        return False
+    else:
+        return True
+
+
 def main():
     parser = argparse.ArgumentParser(description='Fragment growing within binding pocket with Autodock Vina.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -1216,7 +1227,7 @@ def main():
         if iteration is None:
             raise IOError("The last iteration could not be retrieved from the database. Please check it.")
         #todo write function for checking mol_block is not NULL
-        if iteration == 1 and :
+        if iteration == 1 and not check_molblock_isnull(args.output):
             make_docking = False
         else:
             make_docking = True
