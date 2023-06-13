@@ -515,56 +515,52 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
     """
     data = []
     make_docking = True
-    try:
-        if fname.lower().endswith('.smi') or fname.lower().endswith('.smiles'):
-            with open(fname) as f:
-                for i, line in enumerate(f):
-                    tmp = line.strip().split()
-                    smi = Chem.CanonSmiles(tmp[0])
-                    name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(Chem.MolFromSmiles(smi))
-                    data.append((f'{prefix}-{name}' if prefix else name,
-                                 0,
-                                 smi,
-                                 mol_mw,
-                                 mol_rtb,
-                                 mol_logp,
-                                 mol_qed,
-                                 mol_tpsa))
-            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa']
-        elif fname.lower().endswith('.sdf'):
-            make_docking = False
-            for i, mol in enumerate(Chem.SDMolSupplier(fname)):
-                if mol:
-                    name = mol.GetProp('_Name')
-                    if not name:
-                        name = '000-' + str(i).zfill(6)
-                        mol.SetProp('_Name', name)
-                    mol = Chem.AddHs(mol, addCoords=True)
-                    protected_user_canon_ids = None
-                    if mol.HasProp('protected_user_ids'):
-                        # rdkit numeration starts with 0 and sdf numeration starts with 1
-                        protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
-                        protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
-                    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
-                    data.append((f'{prefix}-{name}' if prefix else name,
-                                 0,
-                                 Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True),
-                                 mol_mw,
-                                 mol_rtb,
-                                 mol_logp,
-                                 mol_qed,
-                                 mol_tpsa,
-                                 Chem.MolToMolBlock(mol),
-                                 protected_user_canon_ids))
-            cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'mol_block', 'protected_user_canon_ids']
-        else:
-            raise ValueError('input file with fragments has unrecognizable extension. '
-                             'Only SMI, SMILES and SDF are allowed.')
-    finally:
-        ...
-    for data_ in data:
-        preparation_for_docking.insert_db(db_fname, data=data_, cols=cols)
+    if fname.lower().endswith('.smi') or fname.lower().endswith('.smiles'):
+        with open(fname) as f:
+            for i, line in enumerate(f):
+                tmp = line.strip().split()
+                smi = Chem.CanonSmiles(tmp[0])
+                name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
+                mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(Chem.MolFromSmiles(smi))
+                data.append((f'{prefix}-{name}' if prefix else name,
+                             0,
+                             smi,
+                             mol_mw,
+                             mol_rtb,
+                             mol_logp,
+                             mol_qed,
+                             mol_tpsa))
+        cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa']
+    elif fname.lower().endswith('.sdf'):
+        make_docking = False
+        for i, mol in enumerate(Chem.SDMolSupplier(fname)):
+            if mol:
+                name = mol.GetProp('_Name')
+                if not name:
+                    name = '000-' + str(i).zfill(6)
+                    mol.SetProp('_Name', name)
+                mol = Chem.AddHs(mol, addCoords=True)
+                protected_user_canon_ids = None
+                if mol.HasProp('protected_user_ids'):
+                    # rdkit numeration starts with 0 and sdf numeration starts with 1
+                    protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
+                    protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
+                mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
+                data.append((f'{prefix}-{name}' if prefix else name,
+                             0,
+                             Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True),
+                             mol_mw,
+                             mol_rtb,
+                             mol_logp,
+                             mol_qed,
+                             mol_tpsa,
+                             Chem.MolToMolBlock(mol),
+                             protected_user_canon_ids))
+        cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'mol_block', 'protected_user_canon_ids']
+    else:
+        raise ValueError('input file with fragments has unrecognizable extension. '
+                         'Only SMI, SMILES and SDF are allowed.')
+    preparation_for_docking.insert_db(db_fname, data=data, cols=cols)
     return make_docking
 
 
@@ -1042,8 +1038,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             data.extend(d)
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
-        for data_ in data:
-            preparation_for_docking.insert_db(dbname, data=data_, cols=cols)
+        preparation_for_docking.insert_db(dbname, data=data, cols=cols)
         return True
 
     else:
