@@ -1178,7 +1178,6 @@ def main():
         make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
 
-    # exit()
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
