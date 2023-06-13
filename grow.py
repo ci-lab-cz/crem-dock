@@ -1129,6 +1129,15 @@ def main():
     parser.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
                         help='PDB file with the same protein as for docking, but it should have all hydrogens explicit.'
                              'Required for determination of growing points in molecules and PLIF detection.')
+    parser.add_argument('--config', metavar='FILENAME', required=False,
+                        help='YAML file with parameters used by docking program.\n'
+                             'vina.yml\n'
+                             'protein: path to pdbqt file with a protein\n'
+                             'protein_setup: path to a text file with coordinates of a binding site\n'
+                             'exhaustiveness: 8\n'
+                             'n_poses: 10\n'
+                             'seed: -1\n'
+                             'gnina.yml\n')
     parser.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
                         help='cutoff of Tversky similarity, value between 0 and 1.')
     parser.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
@@ -1141,15 +1150,6 @@ def main():
                              'which will be analyzed together.')
     parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
                         help='number of cpus.')
-    parser.add_argument('--config', metavar='FILENAME', required=False,
-                        help='YAML file with parameters used by docking program.\n'
-                             'vina.yml\n'
-                             'protein: path to pdbqt file with a protein\n'
-                             'protein_setup: path to a text file with coordinates of a binding site\n'
-                             'exhaustiveness: 8\n'
-                             'n_poses: 10\n'
-                             'seed: -1\n'
-                             'gnina.yml\n')
 
     args = parser.parse_args()
 
@@ -1168,7 +1168,6 @@ def main():
         iteration = get_last_iter_from_db(args.output)
         if iteration is None:
             raise IOError("The last iteration could not be retrieved from the database. Please check it.")
-        #todo write function for checking mol_block is not NULL
         if iteration == 1 and not check_molblock_isnull(args.output):
             make_docking = False
         else:
