@@ -70,7 +70,7 @@ def select_from_db(cur, sql, values):
     """
     if sql.count('?') > 1:
         raise ValueError('SQL query should contain only one question mark.')
-    chunks = iter(partial(take, 32000, iter(values)), [])   # split values on chunks with up to 32000 items
+    chunks = iter(partial(take, 32000, iter(values)), [])  # split values on chunks with up to 32000 items
     for chunk in chunks:
         for item in cur.execute(sql.replace('?', ','.join('?' * len(chunk))), chunk):
             yield item
@@ -281,7 +281,8 @@ def select_top_mols(mols, conn, ntop, ranking_func):
     Returns list of ntop molecules with the highest score
     :param mols: list of molecules
     :param conn: connection to docking DB
-    :param ntop: number of top scored molecules to select
+    :param ntop: number of top scored molecules to
+    :param ranking_func:
     :return:
     """
     mol_ids = get_mol_ids(mols)
@@ -297,6 +298,7 @@ def sort_clusters(conn, clusters, ranking_func):
     Returns clusters with molecules filtered by properties and reordered according to docking scores
     :param conn: connection to docking DB
     :param clusters: tuple of tuples with mol ids in each cluster
+    :param ranking_func:
     :return: list of lists with mol ids
     """
     scores = ranking_func(conn, [mol_id for cluster in clusters for mol_id in cluster])
@@ -311,14 +313,14 @@ def get_clusters_by_KMeans(mols, nclust):
     """
     Returns tuple of tuples with mol ids in each cluster
     :param mols: list of molecules
-    :param tanimoto: tanimoto threshold for clustering
+    :param nclust: a count clusters for clustering
     :return:
     """
     clusters = defaultdict(list)
     fps = []
     idx_mols = []
     for mol in mols:
-        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024)) ### why so few?
+        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024))  ### why so few?
         idx_mols.append(mol.GetProp('_Name'))
     X = np.array(fps)
     labels = KMeans(n_clusters=nclust, random_state=0).fit_predict(X).tolist()
@@ -331,7 +333,7 @@ def get_protected_ids(mol, protein_xyz, dist_threshold):
     """
     Returns list of ids of heavy atoms ids which have ALL hydrogen atoms close to the protein
     :param mol: molecule
-    :param protein_file: protein pdbqt file
+    :param protein_xyz: protein file (pdb or pdbqt)
     :param dist_threshold: minimum distance to hydrogen atoms
     :return:
     """
@@ -348,29 +350,29 @@ def get_protected_ids(mol, protein_xyz, dist_threshold):
     output_ids = []
     for a in mol.GetAtoms():
         if a.GetAtomicNum() > 1:
-            if not (set(n.GetIdx() for n in a.GetNeighbors() if n.GetAtomicNum() == 1) - ids):  # all hydrogens of a heavy atom are close to protein
+            if not (set(n.GetIdx() for n in a.GetNeighbors() if
+                        n.GetAtomicNum() == 1) - ids):  # all hydrogens of a heavy atom are close to protein
                 output_ids.append(a.GetIdx())
 
     return output_ids
 
 
-def get_protein_heavy_atom_xyz(protein_pdbqt):
+def get_protein_heavy_atom_xyz(protein):
     """
     Returns coordinates of heavy atoms
-    :param protein_pdbqt:
+    :param protein: protein file (pdb or pdbqt), explicit hydrogens are not necessary
     :return: 2darray (natoms x 3)
     """
-    pdb_block = open(protein_pdbqt).readlines()
+    pdb_block = open(protein).readlines()
     protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]), sanitize=False)
     if protein is None:
         raise ValueError("Protein structure is incorrect. Please check protein pdbqt file.")
     xyz = protein.GetConformer().GetPositions()
-    xyz = xyz[[a.GetAtomicNum() > 1 for a in protein.GetAtoms()], ]
+    xyz = xyz[[a.GetAtomicNum() > 1 for a in protein.GetAtoms()],]
     return xyz
 
 
 def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
-
     # def find_protected_ids(protected_ids, mol1, mol2):
     #     """
     #     Find a correspondence between protonated and non-protonated structures to transfer prpotected ids
@@ -400,7 +402,8 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
-    rtb = max_rtb - CalcNumRotatableBonds(mol) - 1 # it is necessary to take into account the formation of bonds during the growth of the molecule
+    rtb = max_rtb - CalcNumRotatableBonds(
+        mol) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
     if rtb == -1:
         rtb = 0
     logp = max_logp - MolLogP(mol) + 0.5
@@ -410,7 +413,8 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
     if mol.HasProp('protected_user_canon_ids'):
-        _protected_user_ids = set(get_atom_idxs_for_canon(mol, list(map(int, mol.GetProp('protected_user_canon_ids').split(',')))))
+        _protected_user_ids = set(
+            get_atom_idxs_for_canon(mol, list(map(int, mol.GetProp('protected_user_canon_ids').split(',')))))
     _protected_alg_ids = set(get_protected_ids(mol, protein_xyz, h_dist_threshold))
     protected_ids = _protected_alg_ids | _protected_user_ids
 
@@ -448,18 +452,18 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     return res
 
 
-def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
+def __grow_mols(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
-    :param protein_pdbqt: protein pdbqt file
+    :param protein: protein file (pdb or pdbqt), explicit hydrogens are not necessary
     :param h_dist_threshold: maximum distance from H atoms to the protein to mark them as protected from further grow
     :param ncpu: number of cpu
     :param kwargs: arguments passed to crem function grow_mol
     :return: dict of parent mols and lists of corresponding generated mols
     """
     res = dict()
-    protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
+    protein_xyz = get_protein_heavy_atom_xyz(protein)
     for mol in mols:
         tmp = __grow_mol(mol, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
                          h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
@@ -471,8 +475,10 @@ def __grow_mols(mols, protein_pdbqt, max_mw, max_rtb, max_logp, max_tpsa, h_dist
 def create_db(fname, args, args_to_save):
     """
     Creates a DB using the corresponding function from moldock and adds some new columns and a table to it
-    :param fname:
-    :param args:
+    :param fname: file name of output DB
+    :param args: argparse namespace
+    :param args_to_save: list of arg names which values are file names which content should be stored as separate
+                         fields in setup table
     :return:
     """
     preparation_for_docking.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
@@ -511,6 +517,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
 
     :param fname: SMILES or SDF with 3D coordinates
     :param db_fname: output DB
+    :param prefix: string which will be added to all names
     :return:
     """
     data = []
@@ -576,17 +583,17 @@ def get_last_iter_from_db(db_fname):
         return res + 1
 
 
-def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, max_logp, ntop, ranking_func, ncpu=1, **kwargs):
+def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, ntop, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
     :param conn:
-    :param protein_pdbqt:
-    :param protonation:
-    :param ntop:
+    :param protein:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
+    :param ntop:
+    :param ranking_func:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
@@ -594,22 +601,22 @@ def selection_grow_greedy(mols, conn, protein_pdbqt, max_mw, max_rtb, max_logp, 
     if len(mols) == 0:
         return []
     selected_mols = select_top_mols(mols, conn, ntop, ranking_func)
-    res = __grow_mols(selected_mols, protein_pdbqt, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, ncpu=ncpu, **kwargs)
+    res = __grow_mols(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):
+def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1,
+                         **kwargs):
     """
 
     :param mols:
     :param conn:
-    :param tanimoto:
-    :param protein_pdbqt:
-    :param protonation:
-    :param ntop:
+    :param protein:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
+    :param ntop:
+    :param ranking_func:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
@@ -625,17 +632,19 @@ def selection_grow_clust(mols, conn, nclust, protein_pdbqt, max_mw, max_rtb, max
     for cluster in sorted_clusters:
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
-    res = __grow_mols(selected_mols, protein_pdbqt, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,ncpu=ncpu, **kwargs)
+    res = __grow_mols(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+                      ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, max_rtb, max_logp, max_tpsa, ranking_func, ncpu=1, **kwargs):
+def selection_grow_clust_deep(mols, conn, nclust, protein, ntop, max_mw, max_rtb, max_logp, max_tpsa, ranking_func,
+                              ncpu=1, **kwargs):
     """
 
     :param mols:
     :param conn:
     :param tanimoto:
-    :param protein_pdbqt:
+    :param protein:
     :param protonation:
     :param ntop:
     :param max_mw:
@@ -653,7 +662,7 @@ def selection_grow_clust_deep(mols, conn, nclust, protein_pdbqt, ntop, max_mw, m
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))  # {mol_id: mol, ...}
-    protein_xyz = get_protein_heavy_atom_xyz(protein_pdbqt)
+    protein_xyz = get_protein_heavy_atom_xyz(protein)
     # grow up to N top scored mols from each cluster
     for cluster in sorted_clusters:
         processed_mols = 0
@@ -689,7 +698,7 @@ def identify_pareto(df):
     return population_ids[pareto_front].tolist()
 
 
-def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein_pdbqt, ranking_func, ncpu, **kwargs):
+def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein, ranking_func, ncpu, **kwargs):
     """
 
     :param mols:
@@ -697,7 +706,7 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein_pdbqt, ranking_
     :param mw:
     :param rtb:
     :param logp:
-    :param protein_pdbqt:
+    :param protein:
     :param protonation:
     :param ncpu:
     :param tmpdir:
@@ -718,7 +727,7 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein_pdbqt, ranking_
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
     mols = get_mols(conn, mols_pareto)
-    res = __grow_mols(mols, protein_pdbqt, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa, ncpu=ncpu, **kwargs)
+    res = __grow_mols(mols, protein, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa, ncpu=ncpu, **kwargs)
     return res
 
 
@@ -776,7 +785,7 @@ def get_isomers(mol):
 
 def calc_properties(mol):
     mw = round(MolWt(mol), 2)
-    rtb = CalcNumRotatableBonds(Chem.RemoveHs(mol)) # does not count things like amide or ester bonds
+    rtb = CalcNumRotatableBonds(Chem.RemoveHs(mol))  # does not count things like amide or ester bonds
     logp = round(MolLogP(mol), 2)
     qed = round(QED.qed(mol), 3)
     tpsa = round(CalcTPSA(mol), 2)
@@ -792,6 +801,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, pre
     :param iteration: iteration number
     :param rtb: maximum allowed number of RTB
     :param mw: maximum allowed MW
+    :param logp: maximum allowed logP
     :param tpsa: maximum allowed TPSA
     :param prefix: string which will be added to all names
     :return:
@@ -812,10 +822,6 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, pre
                     map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
                 child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
                 child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
-
-            # data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True), None,
-            #              parent_mol.GetProp('_Name'), None, mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, None, None,
-            #              None, None, child_protected_canon_user_id, None))
             data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True),
                          parent_mol.GetProp('_Name'), mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa,
                          child_protected_canon_user_id))
@@ -974,17 +980,17 @@ def ranking_by_num_heavy_atoms_FCsp3_BM(conn, mol_ids):
 #         return False
 
 
-def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa, alg_type, ranking_func, ncpu,
-                   protonation, make_docking=True, dask_client=None, plif_list=None, protein_h=None, plif_cutoff=1,
+def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
+                   alg_type, ranking_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
+                   protein_h=None, plif_cutoff=1,
                    prefix=None, **kwargs):
-
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
         preparation_for_docking.add_protonation(dbname, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     conn = sqlite3.connect(dbname)
     if make_docking:
-
-        mols = preparation_for_docking.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        mols = preparation_for_docking.select_mols_to_dock(conn,
+                                                           add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -1007,27 +1013,28 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         else:
             mols = get_mols(conn, mol_data.index)
             if alg_type == 1:
-                res = selection_grow_greedy(mols=mols, conn=conn, protein_pdbqt=protein_h,
-                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa, ranking_func=ranking_func,
+                res = selection_grow_greedy(mols=mols, conn=conn, protein=protein_h,
+                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                            ranking_func=ranking_func,
                                             ncpu=ncpu, **kwargs)
-            elif alg_type in [2, 3] and len(mols) <= nclust:    # if number of mols is lower than nclust grow all mols
-                res = __grow_mols(mols=mols, protein_pdbqt=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
+            elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
+                res = __grow_mols(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                   max_tpsa=tpsa, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
-                res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_h,
+                res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
                                                 ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                 ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
-                res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_pdbqt=protein_h,
+                res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                            ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, mw=mw, rtb=rtb, logp=logp, tpsa=tpsa,
-                                          protein_pdbqt=protein_h, ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                                          protein=protein_h, ranking_func=ranking_func, ncpu=ncpu, **kwargs)
 
     else:
         mols = get_mols(conn, get_docked_mol_ids(conn, iteration))
-        res = __grow_mols(mols=mols, protein_pdbqt=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+        res = __grow_mols(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                           ncpu=ncpu, **kwargs)
 
     if res:
@@ -1178,7 +1185,6 @@ def main():
         make_docking = insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
 
-
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
         sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
                          'will result in selection on each iteration more than 20 molecules that may slower '
@@ -1190,7 +1196,7 @@ def main():
                                 'Calculation was aborted.')
 
     if args.hostfile is not None:
-        #import dask
+        # import dask
         from dask.distributed import Client
 
         with open(args.hostfile) as f:
@@ -1199,7 +1205,6 @@ def main():
         # dask_client = Client()   # to test dask locally
     else:
         dask_client = None
-
 
     try:
 
