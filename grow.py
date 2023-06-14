@@ -32,8 +32,8 @@ def ranking_type(x):
                      2: ranking_by_docking_score_qed,
                      3: ranking_by_num_heavy_atoms,
                      4: ranking_by_num_heavy_atoms_qed,
-                     5: ranking_by_FCsp3_BM,
-                     6: ranking_by_num_heavy_atoms_FCsp3_BM}
+                     5: ranking_by_fcsp3_bm,
+                     6: ranking_by_num_heavy_atoms_fcsp3_bm}
     try:
         return ranking_types[x]
     except KeyError:
@@ -314,7 +314,7 @@ def get_clusters_by_kmeans(mols, nclust):
     fps = []
     idx_mols = []
     for mol in mols:
-        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024))  ### why so few?
+        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024))  #why so few?
         idx_mols.append(mol.GetProp('_Name'))
     X = np.array(fps)
     labels = KMeans(n_clusters=nclust, random_state=0).fit_predict(X).tolist()
@@ -355,7 +355,7 @@ def get_protein_heavy_atom_xyz(protein):
     """
     Returns coordinates of heavy atoms
     :param protein: protein file (pdb or pdbqt), explicit hydrogens are not necessary
-    :return: 2darray (natoms x 3)
+    :return: 2d_array (n_atoms x 3)
     """
     pdb_block = open(protein).readlines()
     protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]), sanitize=False)
@@ -416,6 +416,10 @@ def __grow_mols(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thres
 
     :param mols: list of molecules
     :param protein: protein file (pdb or pdbqt), explicit hydrogens are not necessary
+    :param max_mw:
+    :param max_rtb:
+    :param max_logp:
+    :param max_tpsa:
     :param h_dist_threshold: maximum distance from H atoms to the protein to mark them as protected from further grow
     :param ncpu: number of cpu
     :param kwargs: arguments passed to crem function grow_mol
@@ -542,7 +546,7 @@ def get_last_iter_from_db(db_fname):
         return res + 1
 
 
-def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, ntop, ranking_func, ncpu=1, **kwargs):
+def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -551,6 +555,7 @@ def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, ntop, 
     :param max_mw:
     :param max_rtb:
     :param max_logp:
+    :param max_tpsa:
     :param ntop:
     :param ranking_func:
     :param ncpu:
@@ -560,7 +565,8 @@ def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, ntop, 
     if len(mols) == 0:
         return []
     selected_mols = select_top_mols(mols, conn, ntop, ranking_func)
-    res = __grow_mols(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, ncpu=ncpu, **kwargs)
+    res = __grow_mols(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+                      ncpu=ncpu, **kwargs)
     return res
 
 
@@ -570,10 +576,12 @@ def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp,
 
     :param mols:
     :param conn:
+    :param nclust:
     :param protein:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
+    :param max_tpsa:
     :param ntop:
     :param ranking_func:
     :param ncpu:
@@ -596,19 +604,20 @@ def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp,
     return res
 
 
-def selection_grow_clust_deep(mols, conn, nclust, protein, ntop, max_mw, max_rtb, max_logp, max_tpsa, ranking_func,
+def selection_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func,
                               ncpu=1, **kwargs):
     """
 
     :param mols:
     :param conn:
-    :param tanimoto:
+    :param nclust:
     :param protein:
-    :param protonation:
-    :param ntop:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
+    :param max_tpsa:
+    :param ntop:
+    :param ranking_func:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
@@ -640,8 +649,6 @@ def identify_pareto(df):
     """
     Return ids of mols on pareto front
     :param df:
-    :param tmpdir:
-    :param iteration:
     :return:
     """
     df.sort_values(0, inplace=True)
@@ -665,10 +672,10 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein, ranking_func, 
     :param mw:
     :param rtb:
     :param logp:
+    :param tpsa:
     :param protein:
-    :param protonation:
+    :param ranking_func:
     :param ncpu:
-    :param tmpdir:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols
     """
@@ -691,13 +698,13 @@ def selection_by_pareto(mols, conn, mw, rtb, logp, tpsa, protein, ranking_func, 
 
 
 def get_child_protected_atom_ids(mol, protected_parent_ids):
-    '''
+    """
 
     :param mol:
     :param protected_parent_ids: list[int]
     :type  protected_parent_ids: list[int]
     :return: sorted list of integers
-    '''
+    """
     # After RDKit reaction procedure there is a field <react_atom_idx> with initial parent atom idx in product mol
     protected_product_ids = []
     for a in mol.GetAtoms():
@@ -707,23 +714,23 @@ def get_child_protected_atom_ids(mol, protected_parent_ids):
 
 
 def get_atom_idxs_for_canon(mol, canon_idxs):
-    '''
+    """
     get the rdkit current indices for the canonical indices of the molecule
     :param mol:
     :param canon_idxs: list[int]
     :return: sorted list of integers
-    '''
+    """
     canon_ranks = np.array(Chem.CanonicalRankAtoms(mol))
     return sorted(np.where(np.isin(canon_ranks, canon_idxs))[0].tolist())
 
 
 def get_canon_for_atom_idx(mol, idx):
-    '''
+    """
     get the canonical numeration of the current molecule indices
     :param mol:
     :param idx: list[int]
     :return: sorted list of integers
-    '''
+    """
     canon_ranks = np.array(Chem.CanonicalRankAtoms(mol))
     return sorted(canon_ranks[idx].tolist())
 
@@ -774,7 +781,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, pre
             mol_id = str(iteration).zfill(3) + '-' + str(n).zfill(6) + '-' + str(i).zfill(2)
             if prefix:
                 mol_id = f'{prefix}-{mol_id}'
-            # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeraion
+            # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeration
             child_protected_canon_user_id = None
             if parent_mol.HasProp('protected_user_canon_ids'):
                 parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(
@@ -859,7 +866,7 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     return stat_scores
 
 
-def ranking_by_FCsp3_BM(conn, mol_ids):
+def ranking_by_fcsp3_bm(conn, mol_ids):
     """
     scoring is calculated by the formula: docking score after scaling * FCsp3_BM after scaling at 0.3
     :param conn:
@@ -875,7 +882,7 @@ def ranking_by_FCsp3_BM(conn, mol_ids):
     return stat_scores
 
 
-def ranking_by_num_heavy_atoms_FCsp3_BM(conn, mol_ids):
+def ranking_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
     """
     scoring is calculated by the formula: docking score / number heavy atoms * FCsp3_BM after scaling at 0.3
     :param conn:
@@ -962,7 +969,6 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 
         res = []
         mol_data = get_docked_mol_data(conn, iteration)
-        # mol_data = mol_data.loc[(mol_data['mw'] <= mw) & (mol_data['rtb'] <= rtb)]  # filter by MW and RTB
         if iteration != 1:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
         if plif_list and len(mol_data.index) > 0:
@@ -974,8 +980,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein=protein_h,
                                             ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                            ranking_func=ranking_func,
-                                            ncpu=ncpu, **kwargs)
+                                            ranking_func=ranking_func, ncpu=ncpu, **kwargs)
             elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
                 res = __grow_mols(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                   max_tpsa=tpsa, ncpu=ncpu, **kwargs)
@@ -1126,7 +1131,7 @@ def main():
     # existed DB                          True
     if os.path.isfile(args.output):
         args_dict, tmpfiles = preparation_for_docking.restore_setup_from_db(args.output)
-        # this will ignore stored values of those args which were supplied via command line
+        # this will ignore stored values of those args which were supplied via command line;
         # command line args have precedence over stored ones
         for arg in get_supplied_args(parser):
             del args_dict[arg]
