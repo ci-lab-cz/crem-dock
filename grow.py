@@ -1,12 +1,7 @@
 import argparse
 import os
-import random
-import shutil
 import sqlite3
-import string
-import subprocess
 import sys
-import tempfile
 import traceback
 from collections import defaultdict
 from functools import partial
@@ -25,7 +20,7 @@ from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcFractionCSP3,
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from scipy.spatial import distance_matrix
 from sklearn.cluster import KMeans
-from easydock import preparation_for_docking, vina_dock
+from easydock import preparation_for_docking
 from easydock.run_dock import get_supplied_args, docking
 
 from scripts import plif
@@ -101,10 +96,10 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
     :param conn: connection to docking DB
-    :param table_name: mols or tautomers
     :param plif_ref: list of reference interactions (str)
     :param plif_protein_fname: PDB file with a protein containing all hydrogens to calc plif
     :param ncpu: number of cpu cores
+    :param table_name: mols or tautomers
     :return:
     """
     cur = conn.cursor()
@@ -145,7 +140,6 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='
     # update plif
     if plif_ref is not None:
         pool = Pool(ncpu)
-        # prot = plf.Molecule(Chem.MolFromPDBFile(plif_protein_fname, removeHs=False))   # seems plf.Molecule is unpicklable
         ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
         for mol_id, sim in pool.imap_unordered(partial(plif.plif_similarity,
                                                        plif_protein_fname=plif_protein_fname,
@@ -172,7 +166,7 @@ def get_rmsd(child_mol, parent_mol):
     match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
     best_rms = float('inf')
     for ids in match_ids:
-        diff = np.array(child_mol.GetConformer().GetPositions()[ids,]) - np.array(
+        diff = np.array(child_mol.GetConformer().GetPositions()[ids, ]) - np.array(
             parent_mol.GetConformer().GetPositions())
         rms = np.sqrt((diff ** 2).sum() / len(diff))
         if rms < best_rms:
@@ -309,7 +303,7 @@ def sort_clusters(conn, clusters, ranking_func):
     return output
 
 
-def get_clusters_by_KMeans(mols, nclust):
+def get_clusters_by_kmeans(mols, nclust):
     """
     Returns tuple of tuples with mol ids in each cluster
     :param mols: list of molecules
@@ -368,37 +362,11 @@ def get_protein_heavy_atom_xyz(protein):
     if protein is None:
         raise ValueError("Protein structure is incorrect. Please check protein pdbqt file.")
     xyz = protein.GetConformer().GetPositions()
-    xyz = xyz[[a.GetAtomicNum() > 1 for a in protein.GetAtoms()],]
+    xyz = xyz[[a.GetAtomicNum() > 1 for a in protein.GetAtoms()], ]
     return xyz
 
 
 def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
-    # def find_protected_ids(protected_ids, mol1, mol2):
-    #     """
-    #     Find a correspondence between protonated and non-protonated structures to transfer prpotected ids
-    #     to non-protonated molecule
-    #     :param protected_ids: ids of heavy atoms protected in protonated mol1
-    #     :param mol1: protonated mol
-    #     :param mol2: non-protonated mol
-    #     :return: set of ids of heavy atoms which should be protected in non-protonated mol2
-    #     """
-    #     mcs = rdFMCS.FindMCS((mol1, mol2)).queryMol
-    #     mcs1, mcs2 = mol1.GetSubstructMatches(mcs), mol2.GetSubstructMatches(mcs)
-    #     # mcs1 = list(set(frozenset(i) for i in mcs1))
-    #     # mcs2 = list(set(frozenset(i) for i in mcs2))
-    #     if len(mcs1) > 1 or len(mcs2) > 1:
-    #         sys.stderr.write(f'MCS has multiple mappings in one of these structures: protonated smi '
-    #                          f'{Chem.MolToSmiles(mol1)} or non-protonated smi {Chem.MolToSmiles(mol2)}. '
-    #                          f'One randomly choosing mapping will be used to determine protected atoms.\n')
-    #     mcs1 = mcs1[0]
-    #     mcs2 = mcs2[0]
-    #     # we protect the same atoms which were protected in a protonated mol. Atoms which lost H after protonation
-    #     # will never be selected as protected by the algorithm (only one exception if this heavy atoms bears more
-    #     # than one H), so there is no need to specifically process them. Atoms, to which H were added after protonation,
-    #     # will be protected only if all H atoms are close to a protein
-    #     ids = [j for i, j in zip(mcs1, mcs2) if i in protected_ids]
-    #     return ids
-
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
@@ -426,15 +394,6 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     for a in mol.GetAtoms():
         if a.HasProp('__tmp') and a.GetIntProp('__tmp'):
             protected_ids.append(a.GetIdx())
-
-    # if protonation:
-    #     mol_id = mol.GetProp('_Name')
-    #     cur = conn.cursor()
-    #     mol2 = Chem.MolFromSmiles(list(cur.execute(f"SELECT smi FROM mols WHERE id = '{mol_id}'"))[0][0])  # non-protonated mol
-    #     mol2.SetProp('_Name', mol_id)
-    #     if protected_ids:
-    #         protected_ids = find_protected_ids(protected_ids, mol, mol2)
-    #     mol = mol2
 
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
@@ -623,7 +582,7 @@ def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp,
     """
     if len(mols) == 0:
         return []
-    clusters = get_clusters_by_KMeans(mols, nclust)
+    clusters = get_clusters_by_kmeans(mols, nclust)
     sorted_clusters = sort_clusters(conn, clusters, ranking_func)
     # select top n mols from each cluster
     selected_mols = []
@@ -657,7 +616,7 @@ def selection_grow_clust_deep(mols, conn, nclust, protein, ntop, max_mw, max_rtb
     if len(mols) == 0:
         return []
     res = dict()
-    clusters = get_clusters_by_KMeans(mols, nclust)
+    clusters = get_clusters_by_kmeans(mols, nclust)
     sorted_clusters = sort_clusters(conn, clusters, ranking_func)
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
@@ -1207,9 +1166,6 @@ def main():
         dask_client = None
 
     try:
-
-        # with open(os.path.splitext(args.output)[0] + '.json', 'wt') as f:
-        #     json.dump(vars(args), f, sort_keys=True, indent=2)
         from easydock.vina_dock import mol_dock, pred_dock_time
         while True:
             res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
