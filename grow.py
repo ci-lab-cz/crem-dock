@@ -914,7 +914,7 @@ def get_major_tautomer(mol_dict):
                       for parent_mol, mols in mol_dict.items() for mol in mols]
             tmp.writelines([''.join(smiles)])
             tmp.flush()
-            cmd_run = f"cxcalc -S majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
+            cmd_run = f"cxcalc -S majortautomer -f smiles -a false --ignore-error '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
             for mol in Chem.SDMolSupplier(output):
                 if mol:
