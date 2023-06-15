@@ -93,7 +93,7 @@ def get_mol_ids(mols):
     return [mol.GetProp('_Name') for mol in mols]
 
 
-def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='mols'):
+def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
     """
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
@@ -101,43 +101,37 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='
     :param plif_ref: list of reference interactions (str)
     :param plif_protein_fname: PDB file with a protein containing all hydrogens to calc plif
     :param ncpu: number of cpu cores
-    :param table_name: mols or tautomers
     :return:
     """
     cur = conn.cursor()
-    if table_name == 'mols':
-        iteration = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0] + 1
-        mol_ids = get_docked_mol_ids(conn, iteration)
-        mols = get_mols(conn, mol_ids)
-        # parent_ids and parent_mols can be empty if all compounds do not have parents
-        parent_ids = dict(select_from_db(cur,
-                                         "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
-                                         mol_ids))
-        uniq_parent_ids = list(set(parent_ids.values()))
-        parent_mols = get_mols(conn, uniq_parent_ids)
-        parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
+    iteration = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0] + 1
+    mol_ids = get_docked_mol_ids(conn, iteration)
+    mols = get_mols(conn, mol_ids)
+    # parent_ids and parent_mols can be empty if all compounds do not have parents
+    parent_ids = dict(select_from_db(cur,
+                                     "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
+                                     mol_ids))
+    uniq_parent_ids = list(set(parent_ids.values()))
+    parent_mols = get_mols(conn, uniq_parent_ids)
+    parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
-        # update rmsd
-        for mol in mols:
-            rms = None
-            mol_id = mol.GetProp('_Name')
-            try:
-                parent_mol = parent_mols[parent_ids[mol_id]]
-                rms = get_rmsd(mol, parent_mol)
-            except KeyError:  # missing parent mol
-                pass
+    # update rmsd
+    for mol in mols:
+        rms = None
+        mol_id = mol.GetProp('_Name')
+        try:
+            parent_mol = parent_mols[parent_ids[mol_id]]
+            rms = get_rmsd(mol, parent_mol)
+        except KeyError:  # missing parent mol
+            pass
 
-            cur.execute("""UPDATE mols
-                               SET 
-                                   rmsd = ? 
-                               WHERE
-                                   id = ?
-                            """, (rms, mol_id))
-        conn.commit()
-    elif table_name == 'tautomers':
-        mol_ids = list(cur.execute(f"SELECT id FROM tautomers WHERE mol_block IS NOT NULL"))
-        mol_ids = [i[0] for i in mol_ids]
-        mols = get_mols(conn, mol_ids, table_name='tautomers')
+        cur.execute("""UPDATE mols
+                           SET 
+                               rmsd = ? 
+                           WHERE
+                               id = ?
+                        """, (rms, mol_id))
+    conn.commit()
 
     # update plif
     if plif_ref is not None:
@@ -147,7 +141,7 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1, table_name='
                                                        plif_protein_fname=plif_protein_fname,
                                                        plif_ref_df=ref_df),
                                                mols):
-            cur.execute(f"""UPDATE {table_name}
+            cur.execute(f"""UPDATE mols
                                SET 
                                    plif_sim = ? 
                                WHERE
