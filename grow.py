@@ -275,7 +275,7 @@ def select_top_mols(mols, conn, ntop, ranking_func):
     Returns list of ntop molecules with the highest score
     :param mols: list of molecules
     :param conn: connection to docking DB
-    :param ntop: number of top scored molecules to
+    :param ntop: number of top scored molecules to select
     :param ranking_func:
     :return:
     """
@@ -307,7 +307,7 @@ def get_clusters_by_kmeans(mols, nclust):
     """
     Returns tuple of tuples with mol ids in each cluster
     :param mols: list of molecules
-    :param nclust: a count clusters for clustering
+    :param nclust: number of clusters for clustering
     :return:
     """
     clusters = defaultdict(list)
@@ -327,7 +327,7 @@ def get_protected_ids(mol, protein_xyz, dist_threshold):
     """
     Returns list of ids of heavy atoms ids which have ALL hydrogen atoms close to the protein
     :param mol: molecule
-    :param protein_xyz: protein file (pdb or pdbqt)
+    :param protein_xyz: protein file (pdb or pdbqt, explicit hydrogens are not necessary)
     :param dist_threshold: minimum distance to hydrogen atoms
     :return:
     """
@@ -344,8 +344,8 @@ def get_protected_ids(mol, protein_xyz, dist_threshold):
     output_ids = []
     for a in mol.GetAtoms():
         if a.GetAtomicNum() > 1:
-            if not (set(n.GetIdx() for n in a.GetNeighbors() if
-                        n.GetAtomicNum() == 1) - ids):  # all hydrogens of a heavy atom are close to protein
+            # all hydrogens of a heavy atom are close to protein
+            if not (set(n.GetIdx() for n in a.GetNeighbors() if n.GetAtomicNum() == 1) - ids):
                 output_ids.append(a.GetIdx())
 
     return output_ids
@@ -370,8 +370,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
-    rtb = max_rtb - CalcNumRotatableBonds(
-        mol) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
+    rtb = max_rtb - CalcNumRotatableBonds(mol) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
     if rtb == -1:
         rtb = 0
     logp = max_logp - MolLogP(mol) + 0.5
@@ -758,23 +757,23 @@ def calc_properties(mol):
     return mw, rtb, logp, qed, tpsa
 
 
-def prep_data_for_insert(parent_mol, mol, n, iteration, rtb, mw, logp, tpsa, prefix):
+def prep_data_for_insert(parent_mol, mol, n, iteration, max_rtb, max_mw, max_logp, max_tpsa, prefix):
     """
 
     :param parent_mol:
     :param mol:
     :param n: sequential number
     :param iteration: iteration number
-    :param rtb: maximum allowed number of RTB
-    :param mw: maximum allowed MW
-    :param logp: maximum allowed logP
-    :param tpsa: maximum allowed TPSA
+    :param max_rtb: maximum allowed number of RTB
+    :param max_mw: maximum allowed MW
+    :param max_logp: maximum allowed logP
+    :param max_tpsa: maximum allowed TPSA
     :param prefix: string which will be added to all names
     :return:
     """
     data = []
     mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
-    if mol_mw <= mw and mol_rtb <= rtb and mol_logp <= logp and mol_tpsa <= tpsa:
+    if mol_mw <= max_mw and mol_rtb <= max_rtb and mol_logp <= max_logp and mol_tpsa <= max_tpsa:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
             m = Chem.AddHs(m)
@@ -948,8 +947,7 @@ def ranking_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
-                   protein_h=None, plif_cutoff=1,
-                   prefix=None, **kwargs):
+                   protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
         preparation_for_docking.add_protonation(dbname, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
@@ -1160,7 +1158,6 @@ def main():
                                 'Calculation was aborted.')
 
     if args.hostfile is not None:
-        # import dask
         from dask.distributed import Client
 
         with open(args.hostfile) as f:
