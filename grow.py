@@ -459,19 +459,6 @@ def create_db(fname, args, args_to_save):
     cur.execute("ALTER TABLE mols ADD rmsd REAL")
     cur.execute("ALTER TABLE mols ADD plif_sim REAL")
     cur.execute("ALTER TABLE mols ADD protected_user_canon_ids TEXT DEFAULT NULL")
-    cur.execute("""CREATE TABLE IF NOT EXISTS tautomers
-            (
-             id TEXT PRIMARY KEY,
-             smi TEXT NOT NULL UNIQUE,
-             smi_protonated TEXT,
-             docking_score REAL,
-             rmsd REAL,
-             plif_sim REAL,
-             pdb_block TEXT,
-             mol_block TEXT,
-             time TEXT,
-             duplicate TEXT
-            )""")
     conn.commit()
     conn.close()
 
