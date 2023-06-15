@@ -1,7 +1,9 @@
 import argparse
 import os
 import sqlite3
+import subprocess
 import sys
+import tempfile
 import traceback
 from collections import defaultdict
 from functools import partial
@@ -944,6 +946,34 @@ def ranking_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
 #     else:
 #         return False
 
+def get_major_tautomer(mol_dict):
+    """
+    convert child molecules with parent mol names to smiles file, tautomerize and return the same data structure as input
+    :param mol_dict: {parent_mol: [child_mol1, child_mol2, ...], ...}
+    :return:
+    """
+    data = defaultdict(list)
+    parent_mols = {mol.GetProp("_Name"): mol for mol in mol_dict.keys()}
+    with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
+        fd, output = tempfile.mkstemp()
+        try:
+            smiles = [f'{Chem.MolToSmiles(mol, isomericSmiles=True)}\t{parent_mol.GetProp("_Name")}\n'
+                      for parent_mol, mols in mol_dict.items() for mol in mols]
+            tmp.writelines([''.join(smiles)])
+            tmp.flush()
+            cmd_run = f"cxcalc -S majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
+            subprocess.call(cmd_run, shell=True)
+            for mol in Chem.SDMolSupplier(output):
+                if mol:
+                    mol_name = mol.GetProp('_Name')
+                    stable_tautomer_smi = mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
+                    if stable_tautomer_smi is not None:
+                        data[parent_mols[mol_name]].append(Chem.MolFromSmiles(stable_tautomer_smi))
+        finally:
+            os.close(fd)
+            os.remove(output)
+    return data
+
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
@@ -1000,6 +1030,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                           ncpu=ncpu, **kwargs)
 
     if res:
+        get_major_tautomer(res)
         data = []
         p = Pool(ncpu)
         for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, logp=logp, tpsa=tpsa,
