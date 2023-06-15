@@ -996,14 +996,6 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 
     else:
         sys.stderr.write('Growth has stopped\n')
-        # conn = sqlite3.connect(dbname)
-        # check = tautomer_refinement(conn=conn, ncpu=ncpu)
-        # if check:
-        #     if protonation:
-        #         add_protonation(conn=conn, table_name='tautomers')
-        #     Docking.iter_docking(dbname=dbname, table_name='tautomers', receptor_pdbqt_fname=protein_h,
-        #                          protein_setup=protein_setup, protonation=protonation, use_dask=dask_client, ncpu=ncpu)
-        #     update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu, table_name='tautomers')
         return False
 
 
