@@ -890,24 +890,26 @@ def get_major_tautomer(mol_dict):
     parent_mols = {mol.GetProp("_Name"): mol for mol in mol_dict.keys()}
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
         fd, output = tempfile.mkstemp()
+        print(output)
         try:
-            smiles = [f'{Chem.MolToSmiles(mol, isomericSmiles=True)}\t{parent_mol.GetProp("_Name")}\n'
+            #convert mol to smile to avoid problem like this "Can't kekulize mol.  Unkekulized atoms: 4 5 7"
+            smiles = [f'{Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True)}\t{parent_mol.GetProp("_Name")}\n'
                       for parent_mol, mols in mol_dict.items() for mol in mols]
-            print(smiles)
             tmp.writelines([''.join(smiles)])
-            print(tmp)
             tmp.flush()
             cmd_run = f"cxcalc -S --ignore-error majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
             for mol in Chem.SDMolSupplier(output):
+                # print(Chem.MolFromSmiles(mol))
                 if mol:
                     mol_name = mol.GetProp('_Name')
                     stable_tautomer_smi = mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
                     if stable_tautomer_smi is not None:
                         data[parent_mols[mol_name]].append(Chem.MolFromSmiles(stable_tautomer_smi))
         finally:
-            os.close(fd)
-            os.remove(output)
+            # os.close(fd)
+            # os.remove(output)
+            ...
     return data
 
 
@@ -966,11 +968,11 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                           ncpu=ncpu, **kwargs)
 
     if res:
-        get_major_tautomer(res)
+        res_tautomerize = get_major_tautomer(res)
         data = []
         p = Pool(ncpu)
-        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, rtb=rtb, mw=mw, logp=logp, tpsa=tpsa,
-                                   prefix=prefix), supply_parent_child_mols(res)):
+        for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw, max_logp=logp,
+                                   max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res_tautomerize)):
             data.extend(d)
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
