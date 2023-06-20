@@ -485,7 +485,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
         cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa']
     elif fname.lower().endswith('.sdf'):
         make_docking = False
-        for i, mol in enumerate(Chem.SDMolSupplier(fname)):
+        for i, mol in enumerate(Chem.SDMolSupplier(fname, removeHs=False)):
             if mol:
                 name = mol.GetProp('_Name')
                 if not name:
