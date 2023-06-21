@@ -1120,7 +1120,7 @@ def main():
                         help='PDB file with the same protein as for docking, but it should have all hydrogens explicit.'
                              'Required for determination of growing points in molecules and PLIF detection.')
     parser.add_argument('--program', metavar='STRING', default='vina', required=False, choices=['vina', 'gnina'],
-                        help='name of a docking program. Choices: vina, gnina.')
+                        help='name of a docking program. Choices: vina (default), gnina.')
     parser.add_argument('--config', metavar='FILENAME', required=False,
                         help='YAML file with parameters used by docking program.\n'
                              'vina.yml\n'
