@@ -1121,7 +1121,7 @@ def main():
                              'Required for determination of growing points in molecules and PLIF detection.')
     parser.add_argument('--docking_program', metavar='STRING', required=False, choices=['vina', 'gnina'],
                         help='name of a docking program. Choices: vina, gnina.')
-    parser.add_argument('--docking_config', metavar='FILENAME', required=False,
+    parser.add_argument('--config', metavar='FILENAME', required=False,
                         help='YAML file with parameters used by docking program.\n'
                              'vina.yml\n'
                              'protein: path to pdbqt file with a protein\n'
@@ -1204,7 +1204,7 @@ def main():
 
     try:
         while True:
-            res = make_iteration(dbname=args.output, iteration=iteration, config=args.docking_config, mol_dock_func=mol_dock,
+            res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.algorithm, ranking_func=ranking_type(args.ranking), ncpu=args.ncpu,
