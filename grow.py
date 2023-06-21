@@ -370,9 +370,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     if rtb == -1:
         rtb = 0
     logp = max_logp - MolLogP(mol) + 0.5
-
     tpsa = max_tpsa - CalcTPSA(mol)
-
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
     if mol.HasProp('protected_user_canon_ids'):
@@ -389,6 +387,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     for a in mol.GetAtoms():
         if a.HasProp('__tmp') and a.GetIntProp('__tmp'):
             protected_ids.append(a.GetIdx())
+            a.ClearProp('__tmp')
 
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
@@ -759,17 +758,15 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, max_rtb, max_mw, max_log
     if mol_mw <= max_mw and mol_rtb <= max_rtb and mol_logp <= max_logp and mol_tpsa <= max_tpsa:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
-            m = Chem.AddHs(m)
             mol_id = str(iteration).zfill(3) + '-' + str(n).zfill(6) + '-' + str(i).zfill(2)
             if prefix:
                 mol_id = f'{prefix}-{mol_id}'
             # save canonical protected atom ids because we store mols as SMILES and lost original atom enumeration
+            # canonical ids are computed for fully hydrogenized molecules
             child_protected_canon_user_id = None
             if parent_mol.HasProp('protected_user_canon_ids'):
-                parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(
-                    map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
-                child_protected_user_id = get_child_protected_atom_ids(m, parent_protected_user_ids)
-                child_protected_canon_user_id = ','.join(map(str, get_canon_for_atom_idx(m, child_protected_user_id)))
+                child_protected_canon_user_id = get_protected_canon_ids(m)
+                child_protected_canon_user_id = ','.join(map(str, child_protected_canon_user_id))
             data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True),
                          parent_mol.GetProp('_Name'), mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa,
                          child_protected_canon_user_id))
@@ -880,6 +877,64 @@ def ranking_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
     return stat_scores
 
 
+def assign_protected_ids(mol_dict, prop_name='protected_crem'):
+    """
+    assign boolean atom property 'protected_crem' in child mols according to a parent mol
+    :param mol_dict: {parent_mol: [child_mol1, child_mol2, ...], ...}
+    :param prop_name:
+    :return:
+    """
+    for parent_mol, mols in mol_dict.items():
+        new_mols = list()
+        for m in mols:
+            if parent_mol.HasProp('protected_user_canon_ids'):
+                parent_protected_user_ids = get_atom_idxs_for_canon(parent_mol, list(
+                    map(int, parent_mol.GetProp('protected_user_canon_ids').split(','))))
+                child_protected_user_ids = set(get_child_protected_atom_ids(m, parent_protected_user_ids))
+                for a in m.GetAtoms():
+                    a.SetBoolProp(prop_name, True if a.GetIdx() in child_protected_user_ids else False)
+            new_mols.append(m)
+        mol_dict[parent_mol] = new_mols
+    return mol_dict
+
+
+def set_isotope_to_parent_protected_atoms(mol_dict, prop_name='protected_crem', isotope=13):
+    """
+
+    :param mol_dict: {parent_mol: [child_mol1, child_mol2, ...], ...}
+    :param prop_name:
+    :param isotope:
+    :return:
+    """
+    for parent_mol, mols in mol_dict.items():
+        if parent_mol.HasProp('protected_user_canon_ids'):
+            for m in mols:
+                for atom in m.GetAtoms():
+                    if atom.GetBoolProp(prop_name):
+                        atom.SetIsotope(isotope)
+    return mol_dict
+
+
+def assign_protected_ids_from_isotope(mol_dict, prop_name='protected_crem', isotope=13):
+    """
+    remove isotope label and assign boolean atom property 'protected_crem' True for labeled atoms, otherwise False
+    :param mol_dict: {parent_mol: [child_mol1, child_mol2, ...], ...}
+    :param prop_name:
+    :param isotope:
+    :return:
+    """
+    for parent_mol, mols in mol_dict.items():
+        if parent_mol.HasProp('protected_user_canon_ids'):
+            for m in mols:
+                for atom in m.GetAtoms():
+                    if atom.GetIsotope() == isotope:
+                        atom.SetBoolProp(prop_name, True)
+                        atom.SetIsotope(0)
+                    else:
+                        atom.SetBoolProp(prop_name, False)
+    return mol_dict
+
+
 def get_major_tautomer(mol_dict):
     """
     convert child molecules with parent mol names to smiles file, tautomerize and return the same data structure as input
@@ -892,7 +947,7 @@ def get_major_tautomer(mol_dict):
         fd, output = tempfile.mkstemp()
         print(output)
         try:
-            #convert mol to smile to avoid problem like this "Can't kekulize mol.  Unkekulized atoms: 4 5 7"
+            # remove H to avoid problem with kekulization. Ex: "Can't kekulize mol.  Unkekulized atoms: 4 5 7"
             smiles = [f'{Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True)}\t{parent_mol.GetProp("_Name")}\n'
                       for parent_mol, mols in mol_dict.items() for mol in mols]
             tmp.writelines([''.join(smiles)])
@@ -900,17 +955,30 @@ def get_major_tautomer(mol_dict):
             cmd_run = f"cxcalc -S --ignore-error majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
             subprocess.call(cmd_run, shell=True)
             for mol in Chem.SDMolSupplier(output):
-                # print(Chem.MolFromSmiles(mol))
                 if mol:
                     mol_name = mol.GetProp('_Name')
                     stable_tautomer_smi = mol.GetPropsAsDict().get('MAJOR_TAUTOMER', None)
                     if stable_tautomer_smi is not None:
                         data[parent_mols[mol_name]].append(Chem.MolFromSmiles(stable_tautomer_smi))
         finally:
-            # os.close(fd)
-            # os.remove(output)
-            ...
+            os.close(fd)
+            os.remove(output)
     return data
+
+
+def get_protected_canon_ids(mol, prop_name='protected_crem'):
+    """
+    get canonical ids of labeled atoms for hydrogenized molecule
+    :param mol:
+    :param prop_name:
+    :return:
+    """
+    output = list()
+    mol = Chem.AddHs(mol)
+    for i, atom in zip(Chem.CanonicalRankAtoms(mol), mol.GetAtoms()):
+        if atom.HasProp(prop_name) and atom.GetBoolProp(prop_name):
+            output.append(i)
+    return sorted(output)
 
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
@@ -968,11 +1036,14 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                           ncpu=ncpu, **kwargs)
 
     if res:
-        res_tautomerize = get_major_tautomer(res)
+        res = assign_protected_ids(res)
+        res = set_isotope_to_parent_protected_atoms(res)
+        res = get_major_tautomer(res)
+        res = assign_protected_ids_from_isotope(res)
         data = []
         p = Pool(ncpu)
         for d in p.starmap(partial(prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw, max_logp=logp,
-                                   max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res_tautomerize)):
+                                   max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res)):
             data.extend(d)
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
