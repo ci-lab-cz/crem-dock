@@ -1119,7 +1119,7 @@ def main():
     parser.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
                         help='PDB file with the same protein as for docking, but it should have all hydrogens explicit.'
                              'Required for determination of growing points in molecules and PLIF detection.')
-    parser.add_argument('--docking_program', metavar='STRING', required=False, choices=['vina', 'gnina'],
+    parser.add_argument('--program', metavar='STRING', required=False, choices=['vina', 'gnina'],
                         help='name of a docking program. Choices: vina, gnina.')
     parser.add_argument('--config', metavar='FILENAME', required=False,
                         help='YAML file with parameters used by docking program.\n'
@@ -1194,9 +1194,9 @@ def main():
     else:
         dask_client = None
 
-    if args.docking_program == 'vina':
+    if args.program == 'vina':
         from easydock.vina_dock import mol_dock, pred_dock_time
-    elif args.docking_program == 'gnina':
+    elif args.program == 'gnina':
         from easydock.gnina_dock import mol_dock
         from easydock.vina_dock import pred_dock_time
     else:
