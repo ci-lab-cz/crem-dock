@@ -1116,14 +1116,12 @@ def main():
                         help='maximum allowed logP of a compound.')
     parser.add_argument('--tpsa', type=float, default=120, required=False,
                         help='maximum allowed TPSA of a compound.')
-    parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
-                        help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
-                             'interaction which should be observed for a ligand to pass to the next iteration. Derive '
-                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
     parser.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
                         help='PDB file with the same protein as for docking, but it should have all hydrogens explicit.'
                              'Required for determination of growing points in molecules and PLIF detection.')
-    parser.add_argument('--config', metavar='FILENAME', required=False,
+    parser.add_argument('--docking_program', metavar='STRING', required=False, choices=['vina', 'gnina'],
+                        help='name of a docking program. Choices: vina, gnina.')
+    parser.add_argument('--docking_config', metavar='FILENAME', required=False,
                         help='YAML file with parameters used by docking program.\n'
                              'vina.yml\n'
                              'protein: path to pdbqt file with a protein\n'
@@ -1132,6 +1130,10 @@ def main():
                              'n_poses: 10\n'
                              'seed: -1\n'
                              'gnina.yml\n')
+    parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
+                        help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
+                             'interaction which should be observed for a ligand to pass to the next iteration. Derive '
+                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
     parser.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
                         help='cutoff of Tversky similarity, value between 0 and 1.')
     parser.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
@@ -1192,10 +1194,17 @@ def main():
     else:
         dask_client = None
 
-    try:
+    if args.docking_program == 'vina':
         from easydock.vina_dock import mol_dock, pred_dock_time
+    elif args.docking_program == 'gnina':
+        from easydock.gnina_dock import mol_dock
+        from easydock.vina_dock import pred_dock_time
+    else:
+        raise ValueError(f'Illegal program argument was supplied: {args.program}')
+
+    try:
         while True:
-            res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
+            res = make_iteration(dbname=args.output, iteration=iteration, config=args.docking_config, mol_dock_func=mol_dock,
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.algorithm, ranking_func=ranking_type(args.ranking), ncpu=args.ncpu,
