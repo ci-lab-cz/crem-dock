@@ -198,21 +198,15 @@ def get_docked_mol_data(conn, iteration):
     return df
 
 
-def get_mols(conn, mol_ids, table_name='mols'):
+def get_mols(conn, mol_ids):
     """
     Returns list of Mol objects from docking DB, order is arbitrary, molecules with errors will be silently skipped
     :param conn: connection to docking DB
     :param mol_ids: list of molecules to retrieve
-    :param table_name: mols or tautomers
     :return:
     """
     cur = conn.cursor()
-    if table_name == 'mols':
-        sql = 'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN (?)'
-    elif table_name == 'tautomers':
-        sql = 'SELECT mol_block FROM tautomers WHERE id IN (?)'
-    else:
-        raise ValueError('wrong table name was supplied')
+    sql = 'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN (?)'
 
     mols = []
     for items in select_from_db(cur, sql, mol_ids):
@@ -945,7 +939,6 @@ def get_major_tautomer(mol_dict):
     parent_mols = {mol.GetProp("_Name"): mol for mol in mol_dict.keys()}
     with tempfile.NamedTemporaryFile(suffix='.smi', mode='w', encoding='utf-8') as tmp:
         fd, output = tempfile.mkstemp()
-        print(output)
         try:
             # remove H to avoid problem with kekulization. Ex: "Can't kekulize mol.  Unkekulized atoms: 4 5 7"
             smiles = [f'{Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True)}\t{parent_mol.GetProp("_Name")}\n'
