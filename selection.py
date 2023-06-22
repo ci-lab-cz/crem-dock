@@ -28,7 +28,7 @@ def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tp
     :param ranking_func:
     :param ncpu:
     :param kwargs:
-    :return: dict of parent mol and lists of corresponding generated mols
+    :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
     """
     if len(mols) == 0:
         return []
@@ -54,7 +54,7 @@ def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp,
     :param ranking_func:
     :param ncpu:
     :param kwargs:
-    :return: dict of parent mol and lists of corresponding generated mols
+    :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
     """
     if len(mols) == 0:
         return []
@@ -88,7 +88,7 @@ def selection_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, max_
     :param ranking_func:
     :param ncpu:
     :param kwargs:
-    :return: dict of parent mol and lists of corresponding generated mols
+    :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
     """
     if len(mols) == 0:
         return []
@@ -145,7 +145,7 @@ def selection_by_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein
     :param ranking_func:
     :param ncpu:
     :param kwargs:
-    :return: dict of parent mol and lists of corresponding generated mols
+    :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
     """
     if not mols:
         return []
