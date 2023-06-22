@@ -6,6 +6,12 @@ from rdkit.Chem.rdMolDescriptors import CalcFractionCSP3
 from database import get_mols, get_mol_qeds, get_mol_scores
 
 
+"""
+All score* functions should return a dict with mol_id and a score (the higher the better) for further 
+ranking and selection
+"""
+
+
 def get_corrected_mol_score(conn, mol_ids):
     """
     Returns dict of mol_id: score, where docking scores are multiplied by -1 (since all implemented docking methods
@@ -19,7 +25,7 @@ def get_corrected_mol_score(conn, mol_ids):
     return scores
 
 
-def ranking_by_docking_score(conn, mol_ids):
+def score_by_docking_score(conn, mol_ids):
     """
     invert docking scores of molecules
     :param conn:
@@ -30,7 +36,7 @@ def ranking_by_docking_score(conn, mol_ids):
     return scores
 
 
-def ranking_by_docking_score_qed(conn, mol_ids):
+def score_by_docking_score_qed(conn, mol_ids):
     """
     scoring for molecule is calculated by the formula: docking score after scaling * QED
     :param conn:
@@ -44,7 +50,7 @@ def ranking_by_docking_score_qed(conn, mol_ids):
     return stat_scores
 
 
-def ranking_by_fcsp3_bm(conn, mol_ids):
+def score_by_fcsp3_bm(conn, mol_ids):
     """
     scoring is calculated by the formula: docking score after scaling * FCsp3_BM after scaling at 0.3
     :param conn:
@@ -60,7 +66,7 @@ def ranking_by_fcsp3_bm(conn, mol_ids):
     return stat_scores
 
 
-def ranking_by_num_heavy_atoms(conn, mol_ids):
+def score_by_num_heavy_atoms(conn, mol_ids):
     """
     scoring for molecule is calculated by the formula: docking score / number heavy atoms
     :param conn:
@@ -73,14 +79,14 @@ def ranking_by_num_heavy_atoms(conn, mol_ids):
     return stat_scores
 
 
-def ranking_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
+def score_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
     """
     scoring is calculated by the formula: docking score / number heavy atoms * FCsp3_BM after scaling at 0.3
     :param conn:
     :param mol_ids:
     :return:
     """
-    scores = ranking_by_num_heavy_atoms(conn, mol_ids)
+    scores = score_by_num_heavy_atoms(conn, mol_ids)
     scale_scores = scale_min_max(scores)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
     fcsp3_bm = {mol_id: CalcFractionCSP3(GetScaffoldForMol(m)) for mol_id, m in mol_dict.items()}
@@ -89,7 +95,7 @@ def ranking_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
     return stat_scores
 
 
-def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
+def score_by_num_heavy_atoms_qed(conn, mol_ids):
     """
     scoring is calculated by the formula: docking score / number heavy atoms * QED
     :param conn:
@@ -97,19 +103,19 @@ def ranking_by_num_heavy_atoms_qed(conn, mol_ids):
     :return: dict {mol_id: score}
     """
     qeds = get_mol_qeds(conn, mol_ids)
-    scores = ranking_by_num_heavy_atoms(conn, mol_ids)
+    scores = score_by_num_heavy_atoms(conn, mol_ids)
     scale_scores = scale_min_max(scores)
     stat_scores = {mol_id: (scale_scores[mol_id] * qeds[mol_id]) for mol_id in mol_ids}
     return stat_scores
 
 
-def ranking_type(x):
-    ranking_types = {1: ranking_by_docking_score,
-                     2: ranking_by_docking_score_qed,
-                     3: ranking_by_num_heavy_atoms,
-                     4: ranking_by_num_heavy_atoms_qed,
-                     5: ranking_by_fcsp3_bm,
-                     6: ranking_by_num_heavy_atoms_fcsp3_bm}
+def ranking_score(x):
+    ranking_types = {1: score_by_docking_score,
+                     2: score_by_docking_score_qed,
+                     3: score_by_num_heavy_atoms,
+                     4: score_by_num_heavy_atoms_qed,
+                     5: score_by_fcsp3_bm,
+                     6: score_by_num_heavy_atoms_fcsp3_bm}
     try:
         return ranking_types[x]
     except KeyError:

@@ -14,7 +14,7 @@ import user_protected_atoms
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 from crem_grow import __grow_mols
 from molecules import get_major_tautomer
-from ranking import ranking_type
+from ranking import ranking_score
 from selection import selection_grow_greedy, selection_grow_clust, selection_grow_clust_deep, selection_by_pareto
 
 
@@ -28,7 +28,7 @@ def supply_parent_child_mols(d):
 
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
-                   alg_type, ranking_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
+                   alg_type, ranking_score_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
@@ -60,21 +60,21 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             if alg_type == 1:
                 res = selection_grow_greedy(mols=mols, conn=conn, protein=protein_h,
                                             ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                            ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                                            ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
                 res = __grow_mols(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                   max_tpsa=tpsa, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
                 res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
                                                 ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                                ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                                                ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
                 res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                           ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                                           ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
                 res = selection_by_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                          protein=protein_h, ranking_func=ranking_func, ncpu=ncpu, **kwargs)
+                                          protein=protein_h, ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
 
     else:
         mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
@@ -249,7 +249,7 @@ def main():
             res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
-                                 alg_type=args.algorithm, ranking_func=ranking_type(args.ranking), ncpu=args.ncpu,
+                                 alg_type=args.algorithm, ranking_score_func=ranking_score(args.ranking), ncpu=args.ncpu,
                                  protonation=not args.no_protonation, make_docking=make_docking,
                                  dask_client=dask_client, plif_list=args.plif, protein_h=args.protein_h,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
