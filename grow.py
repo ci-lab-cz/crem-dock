@@ -235,15 +235,13 @@ def get_mol_scores(conn, mol_ids):
 
 def get_corrected_mol_score(conn, mol_ids):
     """
-    Returns dict of mol_id: score, where molecules with docking scores less than -20 are assigned a value of -20 and
-    docking scores, multiplied by -1
+    Returns dict of mol_id: score, where docking scores are multiplied by -1 (since all implemented docking methods
+    return negative scores for the best molecules). This is necessary for further ranking
     :param conn:
     :param mol_ids:
     :return:
     """
     scores = get_mol_scores(conn, mol_ids)
-    for mol_id, dock_score in scores.items():
-        scores[mol_id] = -20.0 if dock_score <= -20 else dock_score
     scores = {i: j * (-1) for i, j in scores.items()}
     return scores
 
