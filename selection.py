@@ -176,7 +176,7 @@ def get_clusters_by_kmeans(mols, nclust):
     fps = []
     idx_mols = []
     for mol in mols:
-        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=1024))  #why so few?
+        fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048))
         idx_mols.append(mol.GetProp('_Name'))
     X = np.array(fps)
     labels = KMeans(n_clusters=nclust, random_state=0).fit_predict(X).tolist()
