@@ -12,10 +12,10 @@ from easydock.run_dock import get_supplied_args, docking
 import database
 import user_protected_atoms
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
-from crem_grow import __grow_mols
+from crem_grow import grow_mols_crem
 from molecules import get_major_tautomer
 from ranking import ranking_score
-from selection import selection_grow_greedy, selection_grow_clust, selection_grow_clust_deep, selection_by_pareto
+from selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, selection_and_grow_pareto
 
 
 def supply_parent_child_mols(d):
@@ -58,28 +58,28 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         else:
             mols = database.get_mols(conn, mol_data.index)
             if alg_type == 1:
-                res = selection_grow_greedy(mols=mols, conn=conn, protein=protein_h,
-                                            ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                            ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-            elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
-                res = __grow_mols(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
-                                  max_tpsa=tpsa, ncpu=ncpu, **kwargs)
-            elif alg_type == 2:
-                res = selection_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
+                res = selection_and_grow_greedy(mols=mols, conn=conn, protein=protein_h,
                                                 ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                 ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+            elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
+                res = grow_mols_crem(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
+                                     max_tpsa=tpsa, ncpu=ncpu, **kwargs)
+            elif alg_type == 2:
+                res = selection_and_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
+                                                    ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                                    ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
-                res = selection_grow_clust(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
-                                           ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                           ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                res = selection_and_grow_clust(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
+                                               ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                               ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
-                res = selection_by_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                          protein=protein_h, ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                                protein=protein_h, ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
 
     else:
         mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
-        res = __grow_mols(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                          ncpu=ncpu, **kwargs)
+        res = grow_mols_crem(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                             ncpu=ncpu, **kwargs)
 
     if res:
         res = user_protected_atoms.assign_protected_ids(res)

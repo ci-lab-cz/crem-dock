@@ -12,7 +12,7 @@ ranking and selection
 """
 
 
-def get_corrected_mol_score(conn, mol_ids):
+def get_inverted_mol_scores(conn, mol_ids):
     """
     Returns dict of mol_id: score, where docking scores are multiplied by -1 (since all implemented docking methods
     return negative scores for the best molecules). This is necessary for further ranking
@@ -32,7 +32,7 @@ def score_by_docking_score(conn, mol_ids):
     :param mol_ids:
     :return: {mol_id: score}
     """
-    scores = get_corrected_mol_score(conn, mol_ids)
+    scores = get_inverted_mol_scores(conn, mol_ids)
     return scores
 
 
@@ -43,7 +43,7 @@ def score_by_docking_score_qed(conn, mol_ids):
     :param mol_ids:
     :return: dict {mol_id: score}
     """
-    scores = get_corrected_mol_score(conn, mol_ids)
+    scores = get_inverted_mol_scores(conn, mol_ids)
     qeds = get_mol_qeds(conn, mol_ids)
     scale_scores = scale_min_max(scores)
     stat_scores = {mol_id: scale_scores[mol_id] * qeds[mol_id] for mol_id in scale_scores.keys()}
@@ -57,7 +57,7 @@ def score_by_fcsp3_bm(conn, mol_ids):
     :param mol_ids:
     :return:
     """
-    scores = get_corrected_mol_score(conn, mol_ids)
+    scores = get_inverted_mol_scores(conn, mol_ids)
     scale_scores = scale_min_max(scores)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
     fcsp3_bm = {mol_id: CalcFractionCSP3(GetScaffoldForMol(m)) for mol_id, m in mol_dict.items()}
@@ -73,7 +73,7 @@ def score_by_num_heavy_atoms(conn, mol_ids):
     :param mol_ids:
     :return: dict {mol_id: score}
     """
-    scores = get_corrected_mol_score(conn, mol_ids)
+    scores = get_inverted_mol_scores(conn, mol_ids)
     mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
     stat_scores = {mol_id: scores[mol_id] / mol_dict[mol_id].GetNumHeavyAtoms() for mol_id in mol_ids}
     return stat_scores

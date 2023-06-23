@@ -10,11 +10,11 @@ from sklearn.cluster import KMeans
 
 from database import get_mols
 from auxiliary import sort_two_lists
-from crem_grow import get_protein_heavy_atom_xyz, __grow_mol, __grow_mols
+from crem_grow import get_protein_heavy_atom_xyz, grow_mol_crem, grow_mols_crem
 from molecules import get_mol_ids
 
 
-def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):
+def selection_and_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -33,13 +33,13 @@ def selection_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tp
     if len(mols) == 0:
         return []
     selected_mols = select_top_mols(mols, conn, ntop, ranking_func)
-    res = __grow_mols(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
-                      ncpu=ncpu, **kwargs)
+    res = grow_mols_crem(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+                         ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1,
-                         **kwargs):
+def selection_and_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1,
+                             **kwargs):
     """
 
     :param mols:
@@ -67,13 +67,13 @@ def selection_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp,
     for cluster in sorted_clusters:
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
-    res = __grow_mols(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
-                      ncpu=ncpu, **kwargs)
+    res = grow_mols_crem(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+                         ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func,
-                              ncpu=1, **kwargs):
+def selection_and_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func,
+                                  ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -103,8 +103,8 @@ def selection_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, max_
     for cluster in sorted_clusters:
         processed_mols = 0
         for mol_id in cluster:
-            tmp = __grow_mol(mol_dict[mol_id], protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp,
-                             max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
+            tmp = grow_mol_crem(mol_dict[mol_id], protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp,
+                                max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
             if tmp:
                 res[mol_dict[mol_id]] = tmp
                 processed_mols += 1
@@ -132,7 +132,7 @@ def identify_pareto(df):
     return population_ids[pareto_front].tolist()
 
 
-def selection_by_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein, ranking_func, ncpu, **kwargs):
+def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein, ranking_func, ncpu, **kwargs):
     """
 
     :param mols:
@@ -161,7 +161,7 @@ def selection_by_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
     mols = get_mols(conn, mols_pareto)
-    res = __grow_mols(mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
+    res = grow_mols_crem(mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
     return res
 
 

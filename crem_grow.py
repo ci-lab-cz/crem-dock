@@ -55,7 +55,7 @@ def get_protein_heavy_atom_xyz(protein):
     return xyz
 
 
-def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
+def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
@@ -98,7 +98,7 @@ def __grow_mol(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thr
     return res
 
 
-def __grow_mols(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
+def grow_mols_crem(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
@@ -115,8 +115,8 @@ def __grow_mols(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_thres
     res = dict()
     protein_xyz = get_protein_heavy_atom_xyz(protein)
     for mol in mols:
-        tmp = __grow_mol(mol, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
-                         h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
+        tmp = grow_mol_crem(mol, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+                            h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)
         if tmp:
             res[mol] = tmp
     return res
