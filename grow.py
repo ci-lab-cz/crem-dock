@@ -32,7 +32,8 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
-        preparation_for_docking.add_protonation(dbname, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        preparation_for_docking.add_protonation(dbname, tautomerize=False,
+                                                add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     conn = sqlite3.connect(dbname)
     if make_docking:
         mols = preparation_for_docking.select_mols_to_dock(conn,
