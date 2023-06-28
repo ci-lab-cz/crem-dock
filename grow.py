@@ -46,7 +46,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    dask_client=dask_client):
             if res:
                 preparation_for_docking.update_db(conn, mol_id, res)
-                database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
+        database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
 
         res = []
         mol_data = database.get_docked_mol_data(conn, iteration)
