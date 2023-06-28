@@ -115,7 +115,7 @@ def main():
     parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
                         help='SQLite DB with docking results. If an existed DB was supplied input fragments will be '
                              'ignored if any and the program will continue docking from the last successful iteration.')
-    parser.add_argument('-d', '--db', metavar='fragments.db', required=True, type=filepath_type,
+    parser.add_argument('-d', '--db', metavar='fragments.db', required=False, type=filepath_type, default=None,
                         help='SQLite DB with fragment replacements.')
     parser.add_argument('-r', '--radius', default=1, type=int,
                         help='context radius for replacement.')
@@ -200,8 +200,11 @@ def main():
     if os.path.isfile(args.output):
         args_dict, tmpfiles = preparation_for_docking.restore_setup_from_db(args.output)
         # this will ignore stored values of those args which were supplied via command line;
-        # command line args have precedence over stored ones
-        for arg in get_supplied_args(parser):
+        # allowed command line args have precedence over stored ones, others will be ignored
+        supplied_args = get_supplied_args(parser)
+        # allow update of only given arguments
+        supplied_args = tuple(arg for arg in supplied_args if arg in ['output', 'db', 'hostfile', 'ncpu'])
+        for arg in supplied_args:
             del args_dict[arg]
         args.__dict__.update(args_dict)
         iteration = database.get_last_iter_from_db(args.output)
