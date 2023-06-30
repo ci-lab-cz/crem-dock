@@ -262,12 +262,12 @@ def get_mols(conn, mol_ids):
     :return:
     """
     cur = conn.cursor()
-    sql = 'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN (?)'
+    sql = 'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN (?) AND mol_block IS NOT NULL'
 
     mols = []
     for items in select_from_db(cur, sql, mol_ids):
         m = Chem.MolFromMolBlock(items[0], removeHs=False)
-        Chem.AssignAtomChiralTagsFromStructure(m)
+        Chem.AssignStereochemistryFrom3D(m)
         if not m:
             continue
         if len(items) > 1 and items[1] is not None:
