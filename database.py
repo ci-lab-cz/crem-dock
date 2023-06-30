@@ -2,15 +2,15 @@ import sqlite3
 from functools import partial
 from multiprocessing import Pool
 
+import easydock
 import pandas as pd
-from easydock import preparation_for_docking
+from easydock.database import select_from_db
 from rdkit import Chem
 from rdkit.Chem import QED
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA
 
-from auxiliary import take
 from molecules import get_isomers, get_rmsd
 from user_protected_atoms import get_canon_for_atom_idx, get_protected_canon_ids
 from scripts import plif
@@ -25,7 +25,7 @@ def create_db(fname, args, args_to_save):
                          fields in setup table
     :return:
     """
-    preparation_for_docking.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
+    easydock.database.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     # cur.execute("PRAGMA journal_mode=WAL")
@@ -98,7 +98,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
     else:
         raise ValueError('input file with fragments has unrecognizable extension. '
                          'Only SMI, SMILES and SDF are allowed.')
-    preparation_for_docking.insert_db(db_fname, data=data, cols=cols)
+    easydock.database.insert_db(db_fname, data=data, cols=cols)
     return make_docking
 
 
@@ -298,23 +298,3 @@ def check_any_molblock_isnull(dbname):
         return False
     else:
         return True
-
-
-def select_from_db(cur, sql, values):
-    """
-    It makes SELECTs by chunks and works if too many values should be returned from DB.
-    Workaround of the limitation of SQLite3 on the number of values in a query (https://www.sqlite.org/limits.html,
-    section 9).
-    :param cur: curson or connection to db
-    :param sql: SQL query, where a single question mark identify position where to insert multiple values, e.g.
-                "SELECT smi FROM mols WHERE id IN (?)". This question mark will be replaced with multiple ones.
-                So, only one such a symbol should be present in the query.
-    :param values: list of values which will substitute the question mark in the query
-    :return: generator over results retrieved from DB
-    """
-    if sql.count('?') > 1:
-        raise ValueError('SQL query should contain only one question mark.')
-    chunks = iter(partial(take, 32000, iter(values)), [])  # split values on chunks with up to 32000 items
-    for chunk in chunks:
-        for item in cur.execute(sql.replace('?', ','.join('?' * len(chunk))), chunk):
-            yield item
