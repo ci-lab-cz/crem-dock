@@ -7,6 +7,7 @@ from functools import partial
 from multiprocessing import Pool
 
 from easydock import preparation_for_docking
+from easydock import database as eadb
 from easydock.run_dock import get_supplied_args, docking
 
 import database
@@ -33,10 +34,10 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
-        easydock.database.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        eadb.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     conn = sqlite3.connect(dbname)
     if make_docking:
-        mols = easydock.database.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -44,7 +45,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    ncpu=ncpu,
                                    dask_client=dask_client):
             if res:
-                easydock.database.update_db(conn, mol_id, res)
+                eadb.update_db(conn, mol_id, res)
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
 
         res = []
@@ -93,7 +94,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             data.extend(d)
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
-        easydock.database.insert_db(dbname, data=data, cols=cols)
+        eadb.insert_db(dbname, data=data, cols=cols)
         return True
 
     else:
@@ -197,7 +198,7 @@ def main():
     # 3D SDF                             False
     # existed DB                          True
     if os.path.isfile(args.output):
-        args_dict, tmpfiles = easydock.database.restore_setup_from_db(args.output)
+        args_dict, tmpfiles = eadb.restore_setup_from_db(args.output)
         # this will ignore stored values of those args which were supplied via command line;
         # allowed command line args have precedence over stored ones, others will be ignored
         supplied_args = get_supplied_args(parser)

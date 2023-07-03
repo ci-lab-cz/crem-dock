@@ -2,9 +2,8 @@ import sqlite3
 from functools import partial
 from multiprocessing import Pool
 
-import easydock
 import pandas as pd
-from easydock.database import select_from_db
+from easydock import database as eadb
 from rdkit import Chem
 from rdkit.Chem import QED
 from rdkit.Chem.Crippen import MolLogP
@@ -25,7 +24,7 @@ def create_db(fname, args, args_to_save):
                          fields in setup table
     :return:
     """
-    easydock.database.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
+    eadb.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     # cur.execute("PRAGMA journal_mode=WAL")
@@ -98,7 +97,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
     else:
         raise ValueError('input file with fragments has unrecognizable extension. '
                          'Only SMI, SMILES and SDF are allowed.')
-    easydock.database.insert_db(db_fname, data=data, cols=cols)
+    eadb.insert_db(db_fname, data=data, cols=cols)
     return make_docking
 
 
@@ -117,7 +116,7 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
     mol_ids = get_docked_mol_ids(conn, iteration)
     mols = get_mols(conn, mol_ids)
     # parent_ids and parent_mols can be empty if all compounds do not have parents
-    parent_ids = dict(select_from_db(cur,
+    parent_ids = dict(eadb.select_from_db(cur,
                                      "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
                                      mol_ids))
     uniq_parent_ids = list(set(parent_ids.values()))
@@ -239,7 +238,7 @@ def get_mol_qeds(conn, mol_ids):
     """
     cur = conn.cursor()
     sql = 'SELECT id, qed FROM mols WHERE id IN (?)'
-    return dict(select_from_db(cur, sql, mol_ids))
+    return dict(eadb.select_from_db(cur, sql, mol_ids))
 
 
 def get_mol_scores(conn, mol_ids):
@@ -251,7 +250,7 @@ def get_mol_scores(conn, mol_ids):
     """
     cur = conn.cursor()
     sql = 'SELECT id, docking_score FROM mols WHERE id IN (?)'
-    return dict(select_from_db(cur, sql, mol_ids))
+    return dict(eadb.select_from_db(cur, sql, mol_ids))
 
 
 def get_mols(conn, mol_ids):
@@ -265,7 +264,7 @@ def get_mols(conn, mol_ids):
     sql = 'SELECT mol_block, protected_user_canon_ids FROM mols WHERE id IN (?) AND mol_block IS NOT NULL'
 
     mols = []
-    for items in select_from_db(cur, sql, mol_ids):
+    for items in eadb.select_from_db(cur, sql, mol_ids):
         m = Chem.MolFromMolBlock(items[0], removeHs=False)
         Chem.AssignStereochemistryFrom3D(m)
         if not m:
