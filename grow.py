@@ -6,7 +6,7 @@ import sys
 from functools import partial
 from multiprocessing import Pool
 
-from easydock import preparation_for_docking
+from easydock import preparation_for_docking, database
 from easydock.run_dock import get_supplied_args, docking
 
 import database
@@ -32,12 +32,10 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
-        preparation_for_docking.add_protonation(dbname, tautomerize=False,
-                                                add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        database.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     conn = sqlite3.connect(dbname)
     if make_docking:
-        mols = preparation_for_docking.select_mols_to_dock(conn,
-                                                           add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        mols = database.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -45,7 +43,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    ncpu=ncpu,
                                    dask_client=dask_client):
             if res:
-                preparation_for_docking.update_db(conn, mol_id, res)
+                database.update_db(conn, mol_id, res)
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
 
         res = []
@@ -94,7 +92,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             data.extend(d)
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
-        preparation_for_docking.insert_db(dbname, data=data, cols=cols)
+        database.insert_db(dbname, data=data, cols=cols)
         return True
 
     else:
