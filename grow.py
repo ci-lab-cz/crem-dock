@@ -10,6 +10,7 @@ from easydock import preparation_for_docking
 from easydock.run_dock import get_supplied_args, docking
 
 import database
+import easydock
 import user_protected_atoms
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 from crem_grow import grow_mols_crem
@@ -32,12 +33,10 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
     if protonation:
-        preparation_for_docking.add_protonation(dbname, tautomerize=False,
-                                                add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        easydock.database.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     conn = sqlite3.connect(dbname)
     if make_docking:
-        mols = preparation_for_docking.select_mols_to_dock(conn,
-                                                           add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        mols = easydock.database.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -45,7 +44,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    ncpu=ncpu,
                                    dask_client=dask_client):
             if res:
-                preparation_for_docking.update_db(conn, mol_id, res)
+                easydock.database.update_db(conn, mol_id, res)
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
 
         res = []
@@ -94,7 +93,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             data.extend(d)
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
-        preparation_for_docking.insert_db(dbname, data=data, cols=cols)
+        easydock.database.insert_db(dbname, data=data, cols=cols)
         return True
 
     else:
@@ -198,7 +197,7 @@ def main():
     # 3D SDF                             False
     # existed DB                          True
     if os.path.isfile(args.output):
-        args_dict, tmpfiles = preparation_for_docking.restore_setup_from_db(args.output)
+        args_dict, tmpfiles = easydock.database.restore_setup_from_db(args.output)
         # this will ignore stored values of those args which were supplied via command line;
         # allowed command line args have precedence over stored ones, others will be ignored
         supplied_args = get_supplied_args(parser)
