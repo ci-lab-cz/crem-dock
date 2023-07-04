@@ -225,7 +225,7 @@ def get_docked_mol_ids(conn, iteration):
     :return:
     """
     cur = conn.cursor()
-    res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL")
+    res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL")  # TODO: use docking_score instead of mol_block
     return [i[0] for i in res]
 
 

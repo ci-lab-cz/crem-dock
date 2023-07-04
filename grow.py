@@ -5,6 +5,7 @@ import sqlite3
 import sys
 from functools import partial
 from multiprocessing import Pool
+import datetime
 
 from easydock import preparation_for_docking
 from easydock import database as eadb
@@ -33,11 +34,18 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    alg_type, ranking_score_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     sys.stderr.write(f'iteration {iteration} started\n')
+    sys.stderr.write(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; start protonation\n')
     if protonation:
         eadb.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+    sys.stderr.write(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end protonation\n')
     conn = sqlite3.connect(dbname)
+    sys.stderr.write(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; make_doking {make_docking}\n')
     if make_docking:
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; mols selection for dock\n')
         mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; start docking\n')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -46,17 +54,27 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    dask_client=dask_client):
             if res:
                 eadb.update_db(conn, mol_id, res)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end docking\n')
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end update, calc rmsd and plif\n')
 
         res = []
         mol_data = database.get_docked_mol_data(conn, iteration)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count {mol_data.shape()}\n')
         if iteration != 1:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
         if plif_list and len(mol_data.index) > 0:
             mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count after rmsd/plif filteration {mol_data.shape()}\n')
         if len(mol_data.index) == 0:
             sys.stderr.write(f'iteration {iteration}: no molecules were selected for growing.\n')
         else:
+            sys.stderr.write(
+                f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; start selection and growing\n')
             mols = database.get_mols(conn, mol_data.index)
             if alg_type == 1:
                 res = selection_and_grow_greedy(mols=mols, conn=conn, protein=protein_h,
@@ -76,11 +94,20 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             elif alg_type == 4:
                 res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                 protein=protein_h, ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+            sys.stderr.write(
+                f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end selection and growing\n')
 
     else:
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docking omitted, all mols are grown\n')
         mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
         res = grow_mols_crem(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                              ncpu=ncpu, **kwargs)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docking omitted, all mols were grown\n')
+
+    sys.stderr.write(
+        f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; n mols after grow {sum(len(v)for v in res.values())}\n')
 
     if res:
         res = user_protected_atoms.assign_protected_ids(res)
@@ -95,6 +122,8 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         p.close()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
         eadb.insert_db(dbname, data=data, cols=cols)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; new mols were inserted in DB\n')
         return True
 
     else:
@@ -210,7 +239,7 @@ def main():
         iteration = database.get_last_iter_from_db(args.output)
         if iteration is None:
             raise IOError("The last iteration could not be retrieved from the database. Please check it.")
-        if iteration == 1 and not database.check_any_molblock_isnull(args.output):
+        if iteration == 1 and not database.check_any_molblock_isnull(args.output):   # TODO: fail if any mol block will be NUL after the first iteration, because docking will be False and all molecules from this iteration will be used for growing
             make_docking = False
         else:
             make_docking = True
