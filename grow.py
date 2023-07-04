@@ -6,12 +6,10 @@ import sys
 from functools import partial
 from multiprocessing import Pool
 
-from easydock import preparation_for_docking
 from easydock import database as eadb
 from easydock.run_dock import get_supplied_args, docking
 
 import database
-import easydock
 import user_protected_atoms
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 from crem_grow import grow_mols_crem
@@ -210,10 +208,7 @@ def main():
         iteration = database.get_last_iter_from_db(args.output)
         if iteration is None:
             raise IOError("The last iteration could not be retrieved from the database. Please check it.")
-        if iteration == 1 and not database.check_any_molblock_isnull(args.output):
-            make_docking = False
-        else:
-            make_docking = True
+        make_docking = True
 
     else:
         database.create_db(args.output, args, args_to_save=['protein_h'])
