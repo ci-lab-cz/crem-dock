@@ -239,10 +239,7 @@ def main():
         iteration = database.get_last_iter_from_db(args.output)
         if iteration is None:
             raise IOError("The last iteration could not be retrieved from the database. Please check it.")
-        if iteration == 1 and not database.check_any_molblock_isnull(args.output):   # TODO: fail if any mol block will be NUL after the first iteration, because docking will be False and all molecules from this iteration will be used for growing
-            make_docking = False
-        else:
-            make_docking = True
+        make_docking = True
 
     else:
         database.create_db(args.output, args, args_to_save=['protein_h'])
