@@ -63,13 +63,13 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         res = []
         mol_data = database.get_docked_mol_data(conn, iteration)
         sys.stderr.write(
-            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count {mol_data.shape()}\n')
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count {mol_data.shape}\n')
         if iteration != 1:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
         if plif_list and len(mol_data.index) > 0:
             mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
         sys.stderr.write(
-            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count after rmsd/plif filteration {mol_data.shape()}\n')
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count after rmsd/plif filteration {mol_data.shape}\n')
         if len(mol_data.index) == 0:
             sys.stderr.write(f'iteration {iteration}: no molecules were selected for growing.\n')
         else:
