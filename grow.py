@@ -298,6 +298,8 @@ def main():
                 break
 
     finally:
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; how many iterations completed succesfully\n')
         sys.stderr.write(f'{iteration} iterations were completed successfully\n')
 
 
