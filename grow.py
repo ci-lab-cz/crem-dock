@@ -297,6 +297,10 @@ def main():
                     iteration = 0
                 break
 
+    except Exception as e:
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; make_iteration error: {e}\n')
+
     finally:
         sys.stderr.write(
             f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; how many iterations completed succesfully\n')
