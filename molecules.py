@@ -39,8 +39,9 @@ def get_major_tautomer(mol_dict):
                       for parent_mol, mols in mol_dict.items() for mol in mols]
             tmp.writelines([''.join(smiles)])
             tmp.flush()
-            cmd_run = f"cxcalc -S --ignore-error majortautomer -f smiles -a false '{tmp.name}' > '{output}'"
-            subprocess.call(cmd_run, shell=True)
+            cmd_run = ['cxcalc', '-S', '--ignore-error', 'majortautomer', '-f', 'smiles', '-a', 'false', tmp.name]
+            with open(output, 'w') as file:
+                subprocess.run(cmd_run, stdout=file, text=True)
             for mol in Chem.SDMolSupplier(output):
                 if mol:
                     mol_name = mol.GetProp('_Name')
