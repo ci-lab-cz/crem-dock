@@ -111,9 +111,17 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 
     if res:
         res = user_protected_atoms.assign_protected_ids(res)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end assign_protected_ids\n')
         res = user_protected_atoms.set_isotope_to_parent_protected_atoms(res)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end set_isotope_to_parent_protected_atoms\n')
         res = get_major_tautomer(res)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end get_major_tautomer\n')
         res = user_protected_atoms.assign_protected_ids_from_isotope(res)
+        sys.stderr.write(
+            f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end assign_protected_ids_from_isotope\n')
         data = []
         p = Pool(ncpu)
         try:
