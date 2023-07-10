@@ -144,18 +144,22 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
     # update plif
     if plif_ref is not None:
         pool = Pool(ncpu)
-        ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
-        for mol_id, sim in pool.imap_unordered(partial(plif.plif_similarity,
-                                                       plif_protein_fname=plif_protein_fname,
-                                                       plif_ref_df=ref_df),
-                                               mols):
-            cur.execute(f"""UPDATE mols
-                               SET 
-                                   plif_sim = ? 
-                               WHERE
-                                   id = ?
-                            """, (sim, mol_id))
-    conn.commit()
+        try:
+            ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
+            for mol_id, sim in pool.imap_unordered(partial(plif.plif_similarity,
+                                                           plif_protein_fname=plif_protein_fname,
+                                                           plif_ref_df=ref_df),
+                                                   mols):
+                cur.execute(f"""UPDATE mols
+                                   SET 
+                                       plif_sim = ? 
+                                   WHERE
+                                       id = ?
+                                """, (sim, mol_id))
+            conn.commit()
+        finally:
+            pool.close()
+            pool.join()
 
 
 def calc_properties(mol):

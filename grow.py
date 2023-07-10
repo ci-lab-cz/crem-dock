@@ -116,10 +116,13 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         res = user_protected_atoms.assign_protected_ids_from_isotope(res)
         data = []
         p = Pool(ncpu)
-        for d in p.starmap(partial(database.prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw,
-                                   max_logp=logp, max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res)):
-            data.extend(d)
-        p.close()
+        try:
+            for d in p.starmap(partial(database.prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw,
+                                       max_logp=logp, max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res)):
+                data.extend(d)
+        finally:
+            p.close()
+            p.join()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
         eadb.insert_db(dbname, data=data, cols=cols)
         sys.stderr.write(
