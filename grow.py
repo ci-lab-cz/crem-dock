@@ -3,8 +3,6 @@ import argparse
 import logging
 import os
 import sqlite3
-import sys
-import traceback
 from functools import partial
 from multiprocessing import Pool
 
@@ -17,7 +15,8 @@ from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_
 from crem_grow import grow_mols_crem
 from molecules import get_major_tautomer
 from ranking import ranking_score
-from selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, selection_and_grow_pareto
+from selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
+    selection_and_grow_pareto
 
 
 def supply_parent_child_mols(d):
@@ -32,25 +31,17 @@ def supply_parent_child_mols(d):
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_score_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
-    logging.debug(f'iteration {iteration} started')
+    logging.info(f'iteration {iteration} started')
     logging.debug(f'iteration {iteration}, start protonation')
-    sys.stderr.write(f'iteration {iteration} started\n')
-    # sys.stderr.write(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; start protonation\n')
     if protonation:
         eadb.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
     logging.debug(f'iteration {iteration}, end protonation')
-    # sys.stderr.write(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end protonation\n')
     conn = sqlite3.connect(dbname)
     logging.debug(f'iteration {iteration}, make_docking={make_docking}')
-    # sys.stderr.write(f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; make_doking {make_docking}\n')
     if make_docking:
         logging.debug(f'iteration {iteration}, start mols selection for docking')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; mols selection for dock\n')
         mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         logging.debug(f'iteration {iteration}, start docking')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; start docking\n')
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -60,32 +51,22 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             if res:
                 eadb.update_db(conn, mol_id, res)
         logging.debug(f'iteration {iteration}, end docking')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end docking\n')
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
         logging.debug(f'iteration {iteration}, DB was updated, rmsd and plif were calculted')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end update, calc rmsd and plif\n')
 
         res = dict()
         mol_data = database.get_docked_mol_data(conn, iteration)
         logging.debug(f'iteration {iteration}, docked mols count: {mol_data.shape[0]}')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count {mol_data.shape}\n')
+
         if iteration != 1:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
         if plif_list and len(mol_data.index) > 0:
             mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
         logging.debug(f'iteration {iteration}, docked mols count after rmsd/plif filters: {mol_data.shape[0]}')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count after rmsd/plif filteration {mol_data.shape}\n')
         if len(mol_data.index) == 0:
             logging.info(f'iteration {iteration}, no molecules were selected for growing')
-            sys.stderr.write(f'iteration {iteration}: no molecules were selected for growing.\n')
         else:
             logging.debug(f'iteration {iteration}, start selection and growing')
-            # sys.stderr.write(
-            #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; start selection and growing\n')
             mols = database.get_mols(conn, mol_data.index)
             if alg_type == 1:
                 res = selection_and_grow_greedy(mols=mols, conn=conn, protein=protein_h,
@@ -106,41 +87,25 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                 res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                 protein=protein_h, ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             logging.debug(f'iteration {iteration}, end selection and growing')
-            # sys.stderr.write(
-            #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end selection and growing\n')
 
     else:
         logging.debug(f'iteration {iteration}, docking was omitted, all mols are grown')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docking omitted, all mols are grown\n')
         mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
         res = grow_mols_crem(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                              ncpu=ncpu, **kwargs)
         logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docking omitted, all mols were grown\n')
 
     logging.debug(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values())}')
-    # sys.stderr.write(
-    #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; n mols after grow {sum(len(v)for v in res.values())}\n')
 
     if res:
         res = user_protected_atoms.assign_protected_ids(res)
         logging.debug(f'iteration {iteration}, end assign_protected_ids')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end assign_protected_ids\n')
         res = user_protected_atoms.set_isotope_to_parent_protected_atoms(res)
         logging.debug(f'iteration {iteration}, end set_isotope_to_parent_protected_atoms')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end set_isotope_to_parent_protected_atoms\n')
         res = get_major_tautomer(res)
         logging.debug(f'iteration {iteration}, end get_major_tautomer')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end get_major_tautomer\n')
         res = user_protected_atoms.assign_protected_ids_from_isotope(res)
         logging.debug(f'iteration {iteration}, end assign_protected_ids_from_isotope')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end assign_protected_ids_from_isotope\n')
         data = []
         p = Pool(ncpu)
         try:
@@ -153,13 +118,10 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
         eadb.insert_db(dbname, data=data, cols=cols)
         logging.debug(f'iteration {iteration}, new mols were inserted in DB')
-        # sys.stderr.write(
-        #     f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; new mols were inserted in DB\n')
         return True
 
     else:
         logging.info(f'iteration {iteration}, growth was stopped')
-        sys.stderr.write('Growth has stopped\n')
         return False
 
 
@@ -246,7 +208,8 @@ def main():
                              'will be the address of the scheduler running on the standard port 8786. If omitted, '
                              'calculations will run on a single machine as usual.')
     parser.add_argument('--log', metavar='FILENAME', required=False, type=str, default=None,
-                        help='log file to collect debug messages.')
+                        help='log file to collect progress and debug messages. If omitted, the log file with the same '
+                             'name as output DB will be created.')
     parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
@@ -280,17 +243,15 @@ def main():
         make_docking = database.insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
 
-    if args.log:
-        logging.basicConfig(filename=args.log, encoding='utf-8', level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S',
-                            format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
-    else:
-        logging.disable(logging.CRITICAL)
+    if not args.log:
+        args.log = os.path.abspath(os.path.splitext(args.output)[0] + '.log')
+    logging.basicConfig(filename=args.log, encoding='utf-8', level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S',
+                        format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
-        sys.stderr.write('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
-                         'will result in selection on each iteration more than 20 molecules that may slower '
-                         'computations.\n')
-        sys.stderr.flush()
+        logging.warning('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
+                        'will result in selection on each iteration more than 20 molecules that may slower '
+                        'computations.')
 
     if args.plif is not None and (args.protein_h is None or not os.path.isfile(args.protein_h)):
         raise FileNotFoundError('PLIF pattern was specified but the protein file is missing or was not supplied. '
@@ -338,12 +299,10 @@ def main():
                 break
 
     except Exception as e:
-        traceback.print_exc()
-        logging.debug(f'iteration {iteration}, make_iteration error: {e}')
+        logging.exception(e, stack_info=True)
 
     finally:
-        logging.debug(f'{iteration}s were completed successfully')
-        sys.stderr.write(f'{iteration} iterations were completed successfully\n')  # TODO: replace?
+        logging.info(f'{iteration} iterations were completed successfully')
 
 
 if __name__ == '__main__':

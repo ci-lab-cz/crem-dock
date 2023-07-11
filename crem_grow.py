@@ -1,5 +1,4 @@
-import sys
-import traceback
+import logging
 
 import numpy as np
 from crem.crem import grow_mol
@@ -85,12 +84,9 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
                             symmetry_fixes=True, mw=(1, mw), rtb=(0, rtb), logp=(-100, logp), tpsa=(0, tpsa), **kwargs))
-    except Exception:
-        error_message = traceback.format_exc()
-        sys.stderr.write(f'Grow error.\n'
-                         f'{error_message}\n'
-                         f'{mol.GetProp("_Name")}\n'
-                         f'{Chem.MolToSmiles(mol)}\n')
+    except Exception as e:
+        logging.error(f'grow error, {mol.GetProp("_Name")} {Chem.MolToSmiles(mol)}, {e}',
+                      stack_info=True, exc_info=True)
         res = []
 
     res = tuple(m for smi, m in res)
