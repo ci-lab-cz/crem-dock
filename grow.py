@@ -244,7 +244,7 @@ def main():
         iteration = 1
 
     if not args.log:
-        args.log = os.path.abspath(os.path.splitext(args.output)[0] + '.log')
+        args.log = os.path.splitext(os.path.abspath(args.output))[0] + '.log'
     logging.basicConfig(filename=args.log, encoding='utf-8', level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S',
                         format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
 
