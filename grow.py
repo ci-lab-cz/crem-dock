@@ -302,7 +302,7 @@ def main():
         logging.exception(e, stack_info=True)
 
     finally:
-        logging.info(f'{iteration} iterations were completed successfully')
+        logging.info(f'{iteration} iterations were completed')
 
 
 if __name__ == '__main__':
