@@ -60,7 +60,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         sys.stderr.write(
             f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; end update, calc rmsd and plif\n')
 
-        res = []
+        res = dict()
         mol_data = database.get_docked_mol_data(conn, iteration)
         sys.stderr.write(
             f'{datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}; iteration {iteration}; pid {os.getpid()}; docked mols count {mol_data.shape}\n')
