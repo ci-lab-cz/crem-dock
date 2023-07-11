@@ -109,11 +109,15 @@ def calc_plif(mols, protein_fname, sanitize_protein):
 
 def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, ncpu=1):
     p = Pool(ncpu)
-    mols = [mol for mol in Chem.SDMolSupplier(ligand_fname, removeHs=False) if mol is not None]
-    chunks = chunk(mols, ncpu)
-    df = list(p.imap(partial(calc_plif, protein_fname=protein_fname, sanitize_protein=sanitize_protein), chunks))
-    df = pd.concat(df).fillna(False)
-    df = df.reindex(sorted(df.columns), axis=1)
+    try:
+        mols = [mol for mol in Chem.SDMolSupplier(ligand_fname, removeHs=False) if mol is not None]
+        chunks = chunk(mols, ncpu)
+        df = list(p.imap(partial(calc_plif, protein_fname=protein_fname, sanitize_protein=sanitize_protein), chunks))
+        df = pd.concat(df).fillna(False)
+        df = df.reindex(sorted(df.columns), axis=1)
+    finally:
+        p.close()
+        p.join()
     return df
 
 

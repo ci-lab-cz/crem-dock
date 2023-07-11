@@ -1,4 +1,4 @@
-import sys
+import logging
 
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from rdkit.Chem.rdMolDescriptors import CalcFractionCSP3
@@ -119,7 +119,7 @@ def ranking_score(x):
     try:
         return ranking_types[x]
     except KeyError:
-        sys.stderr.write(f'Wrong type of a ranking function was passed: {x}\n')
+        logging.error(f'Wrong type of a ranking function was passed: {x}. Should be within 1-6.')
         raise
 
 
