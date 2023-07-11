@@ -7,12 +7,10 @@ from functools import partial
 from multiprocessing import Pool
 import datetime
 
-from easydock import preparation_for_docking
 from easydock import database as eadb
 from easydock.run_dock import get_supplied_args, docking
 
 import database
-import easydock
 import user_protected_atoms
 from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 from crem_grow import grow_mols_crem
