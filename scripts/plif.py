@@ -111,9 +111,9 @@ def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, ncpu=1):
     p = Pool(ncpu)
     try:
         mols = []
-        if ligand_fname.lower().endwith('.sdf'):
+        if ligand_fname.lower().endswith('.sdf'):
             mols = [mol for mol in Chem.SDMolSupplier(ligand_fname, removeHs=False) if mol is not None]
-        elif ligand_fname.lower().endwith('.mol'):
+        elif ligand_fname.lower().endswith('.mol'):
             mol = Chem.MolFromMolFile(ligand_fname, removeHs=False)
             if mol:
                 mols = [mol]
