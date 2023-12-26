@@ -24,7 +24,7 @@ def create_db(fname, args, args_to_save):
                          fields in setup table
     :return:
     """
-    eadb.create_db(fname, args, args_to_save, ('protein', 'protein_setup'))
+    eadb.create_db(fname, args, args_to_save, ('protein', 'protein_setup'), unique_smi=True)
     conn = sqlite3.connect(fname)
     cur = conn.cursor()
     # cur.execute("PRAGMA journal_mode=WAL")
