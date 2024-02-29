@@ -21,23 +21,13 @@ conda install -c conda-forge python=3.9 numpy rdkit dask distributed scipy sciki
 
 Install dependencies from pip and github
 ```
-pip install easydock crem meeko
-```
-
-Install vina from sources (https://autodock-vina.readthedocs.io/en/latest/installation.html) or from compiled binaries. In the latter case you need to install python bindings to your anaconda environment as showing below.
-```
-# download zip archive with compiled repository and unpack
-conda activate vina
-cd AutoDock-Vina/build/python
-conda install -c conda-forge boost-cpp swig
-rm -rf build dist *.egg-info (to clean previous installation)
-python setup.py build install 
+pip install vina easydock crem meeko
 ```
 
 Install ProLIF with corrected SMARTS patterns
 ```
-conda install -c conda-forge prolif
-pip install prolif
+conda install -c conda-forge prolif=1.1.0
+pip install prolif==1.1.0
 ```
 
 ## Usage
