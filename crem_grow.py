@@ -58,7 +58,7 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
-    rtb = max_rtb - CalcNumRotatableBonds(mol) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
+    rtb = max_rtb - CalcNumRotatableBonds(Chem.RemoveHs(mol)) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
     if rtb == -1:
         rtb = 0
     logp = max_logp - MolLogP(mol) + 0.5
@@ -84,6 +84,7 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
                             symmetry_fixes=True, mw=(1, mw), rtb=(0, rtb), logp=(-100, logp), tpsa=(0, tpsa), **kwargs))
+
     except Exception as e:
         logging.error(f'grow error, {mol.GetProp("_Name")} {Chem.MolToSmiles(mol)}, {e}',
                       stack_info=True, exc_info=True)
