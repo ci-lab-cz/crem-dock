@@ -32,13 +32,13 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    alg_type, ranking_score_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
                    protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
     logging.info(f'iteration {iteration} started')
-    logging.debug(f'iteration {iteration}, start protonation')
-    if protonation:
-        eadb.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
-    logging.debug(f'iteration {iteration}, end protonation')
     conn = sqlite3.connect(dbname)
     logging.debug(f'iteration {iteration}, make_docking={make_docking}')
     if make_docking:
+        if protonation:
+            logging.debug(f'iteration {iteration}, start protonation')
+            eadb.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+            logging.debug(f'iteration {iteration}, end protonation')
         logging.debug(f'iteration {iteration}, start mols selection for docking')
         mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
         logging.debug(f'iteration {iteration}, start docking')
