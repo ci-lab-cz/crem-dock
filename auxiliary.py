@@ -1,5 +1,6 @@
 from itertools import islice
 
+from rdkit import Chem
 from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds
 
 
