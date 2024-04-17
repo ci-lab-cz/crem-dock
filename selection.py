@@ -5,11 +5,11 @@ import pandas as pd
 from rdkit.Chem import AllChem
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA
+from rdkit.Chem.rdMolDescriptors import CalcTPSA
 from sklearn.cluster import KMeans
 
 from database import get_mols
-from auxiliary import sort_two_lists
+from auxiliary import sort_two_lists, calc_rtb
 from crem_grow import get_protein_heavy_atom_xyz, grow_mol_crem, grow_mols_crem
 from molecules import get_mol_ids
 
@@ -149,7 +149,7 @@ def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, p
     """
     if not mols:
         return []
-    mols = [mol for mol in mols if MolWt(mol) <= max_mw - 50 and CalcNumRotatableBonds(mol) <= max_rtb - 1 and
+    mols = [mol for mol in mols if MolWt(mol) <= max_mw - 50 and calc_rtb(mol) <= max_rtb - 1 and
             MolLogP(mol) < max_logp and CalcTPSA(mol) < max_tpsa]
     if not mols:
         return None

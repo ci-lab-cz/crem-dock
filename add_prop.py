@@ -36,7 +36,7 @@ def calc(items, mw=False, logp=False, rtb=False, tpsa=False, fcsp3=False):
         if logp:
             res['logp'] = round(MolLogP(mol), 2)
         if rtb:
-            res['rtb'] = CalcNumRotatableBonds(mol)
+            res['rtb'] = CalcNumRotatableBonds(Chem.RemoveHs(mol))
         if tpsa:
             res['tpsa'] = CalcTPSA(mol)
         if fcsp3:

@@ -8,8 +8,9 @@ from rdkit import Chem
 from rdkit.Chem import QED
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA
+from rdkit.Chem.rdMolDescriptors import CalcTPSA
 
+from auxiliary import calc_rtb
 from molecules import get_isomers, get_rmsd
 from user_protected_atoms import get_canon_for_atom_idx, get_protected_canon_ids
 from scripts import plif
@@ -164,7 +165,7 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
 
 def calc_properties(mol):
     mw = round(MolWt(mol), 2)
-    rtb = CalcNumRotatableBonds(Chem.RemoveHs(mol))  # does not count things like amide or ester bonds
+    rtb = calc_rtb(mol)
     logp = round(MolLogP(mol), 2)
     qed = round(QED.qed(mol), 3)
     tpsa = round(CalcTPSA(mol), 2)

@@ -4,9 +4,10 @@ import numpy as np
 from crem.crem import grow_mol
 from rdkit import Chem
 from rdkit.Chem.Crippen import MolLogP
-from rdkit.Chem.rdMolDescriptors import CalcNumRotatableBonds, CalcTPSA
+from rdkit.Chem.rdMolDescriptors import CalcTPSA
 from scipy.spatial import distance_matrix
 
+from auxiliary import calc_rtb
 from molecules import neutralize_atoms
 from user_protected_atoms import get_atom_idxs_for_canon
 
@@ -58,7 +59,7 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
     mw = max_mw - Chem.Descriptors.MolWt(mol)
     if mw <= 0:
         return []
-    rtb = max_rtb - CalcNumRotatableBonds(Chem.RemoveHs(mol)) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
+    rtb = max_rtb - calc_rtb(mol) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
     if rtb == -1:
         rtb = 0
     logp = max_logp - MolLogP(mol) + 0.5
