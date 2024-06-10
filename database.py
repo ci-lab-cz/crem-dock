@@ -4,6 +4,7 @@ from multiprocessing import Pool
 
 import pandas as pd
 from easydock import database as eadb
+from easydock.auxiliary import mol_name_split
 from rdkit import Chem
 from rdkit.Chem import QED
 from rdkit.Chem.Crippen import MolLogP
@@ -128,6 +129,7 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
     for mol in mols:
         rms = None
         mol_id = mol.GetProp('_Name')
+        mol_id, stereo_id = mol_name_split(mol_id)
         try:
             parent_mol = parent_mols[parent_ids[mol_id]]
             rms = get_rmsd(mol, parent_mol)
@@ -151,6 +153,7 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
                                                            plif_protein_fname=plif_protein_fname,
                                                            plif_ref_df=ref_df),
                                                    mols):
+                mol_id, stereo_id = mol_name_split(mol_id)
                 cur.execute(f"""UPDATE mols
                                    SET 
                                        plif_sim = ? 
