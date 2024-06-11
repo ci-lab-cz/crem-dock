@@ -74,9 +74,8 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
         make_docking = False
         for i, mol in enumerate(Chem.SDMolSupplier(fname, removeHs=False)):
             if mol:
-                name = mol.GetProp('_Name')
-                name_ = name + '_0'
-                mol.SetProp('_Name', name_)
+                name = mol.GetProp('_Name') + '_0'
+                mol.SetProp('_Name', name)
                 if not name:
                     name = '000-' + str(i).zfill(6) + '_0'
                     mol.SetProp('_Name', name)
