@@ -37,7 +37,8 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
     if make_docking:
         if protonation:
             logging.debug(f'iteration {iteration}, start protonation')
-            eadb.add_protonation(dbname, tautomerize=False, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+            eadb.add_protonation(dbname, program=protonation, tautomerize=False,
+                                 add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
             logging.debug(f'iteration {iteration}, end protonation')
         logging.debug(f'iteration {iteration}, start mols selection for docking')
         mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
@@ -150,9 +151,8 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('--no_protonation', action='store_true', default=False,
-                        help='disable protonation of molecules before docking. Protonation requires installed '
-                             'cxcalc chemaxon utility.')
+    parser.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
+                        help='choose a protonation program supported by EasyDock.')
     parser.add_argument('--n_iterations', default=None, type=int,
                         help='maximum number of iterations.')
     parser.add_argument('-t', '--algorithm', default=2, type=int, choices=[1, 2, 3, 4],
@@ -281,7 +281,7 @@ def main():
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.algorithm, ranking_score_func=ranking_score(args.ranking), ncpu=args.ncpu,
-                                 protonation=not args.no_protonation, make_docking=make_docking,
+                                 protonation=args.protonation, make_docking=make_docking,
                                  dask_client=dask_client, plif_list=args.plif, protein_h=args.protein_h,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
