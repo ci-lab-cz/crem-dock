@@ -4,6 +4,7 @@ from multiprocessing import Pool
 
 import pandas as pd
 from easydock import database as eadb
+from easydock.auxiliary import mol_name_split
 from rdkit import Chem
 from rdkit.Chem import QED
 from rdkit.Chem.Crippen import MolLogP
@@ -276,6 +277,8 @@ def get_mols(conn, mol_ids):
             continue
         if len(items) > 1 and items[1] is not None:
             m.SetProp('protected_user_canon_ids', items[1])
+        mol_id, stereo_id = mol_name_split(m.GetProp('_Name'))
+        m.SetProp('_Name', mol_id)
         mols.append(m)
     cur.close()
     return mols
