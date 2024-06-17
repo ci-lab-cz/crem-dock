@@ -56,14 +56,16 @@ def get_protein_heavy_atom_xyz(protein):
 
 
 def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
-    mw = max_mw - Chem.Descriptors.MolWt(mol)
+    mol_0 = neutralize_atoms(Chem.RemoveHs(mol))  # add neutralize_atoms to calc correct logp and tpsa
+    mw = max_mw - Chem.Descriptors.MolWt(mol_0)
     if mw <= 0:
         return []
-    rtb = max_rtb - calc_rtb(mol) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
+    rtb = max_rtb - calc_rtb(mol_0) - 1  # it is necessary to take into account the formation of bonds during the growth of the molecule
     if rtb == -1:
         rtb = 0
-    logp = max_logp - MolLogP(mol) + 0.5
-    tpsa = max_tpsa - CalcTPSA(mol)
+    logp = max_logp - MolLogP(mol_0) + 0.5
+    tpsa = max_tpsa - CalcTPSA(mol_0)
+
     mol = Chem.AddHs(mol, addCoords=True)
     _protected_user_ids = set()
     if mol.HasProp('protected_user_canon_ids'):
