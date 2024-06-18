@@ -77,7 +77,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                 name = mol.GetProp('_Name') + '_0'
                 mol.SetProp('_Name', name)
                 if not name:
-                    name = '000-' + str(i).zfill(6) + '_0'
+                    name = '000-' + str(i).zfill(6)
                     mol.SetProp('_Name', name)
                 mol = Chem.AddHs(mol, addCoords=True)
                 protected_user_canon_ids = None
