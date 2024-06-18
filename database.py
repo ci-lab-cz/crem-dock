@@ -75,10 +75,9 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
         for i, mol in enumerate(Chem.SDMolSupplier(fname, removeHs=False)):
             if mol:
                 name = mol.GetProp('_Name')
-                mol.SetProp('_Name', name + '_0')
                 if not name:
                     name = '000-' + str(i).zfill(6)
-                    mol.SetProp('_Name', name + '_0')
+                mol.SetProp('_Name', name + '_0')
                 mol = Chem.AddHs(mol, addCoords=True)
                 protected_user_canon_ids = None
                 if mol.HasProp('protected_user_ids'):
