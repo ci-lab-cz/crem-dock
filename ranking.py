@@ -27,10 +27,10 @@ def check_score_order(conn):
             'scoring': {
                 'vinardo': True,
                 'default': False,
-                'ad4_scoring': False,
-                'dkoes_fast': False,
-                'dkoes_scoring': False,
-                'dkoes_scoring_old': False,
+                #'ad4_scoring': False,
+                #'dkoes_fast': False,
+                #'dkoes_scoring': False,
+                #'dkoes_scoring_old': False,
                 'vina': True
             }
         }
