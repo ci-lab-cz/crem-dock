@@ -1,4 +1,5 @@
 import logging
+import yaml
 
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from rdkit.Chem.rdMolDescriptors import CalcFractionCSP3
@@ -12,6 +13,42 @@ ranking and selection
 """
 
 
+def check_score_order(conn):
+    """
+    Return True or False for further inverting mol docking scores.
+    :param conn:
+    :return:
+    """
+    programs = {
+        'vina': {
+            'scoring': True,
+            },
+        'gnina': {
+            'scoring': {
+                'vinardo': True,
+                'default': False,
+                #'ad4_scoring': False,
+                #'dkoes_fast': False,
+                #'dkoes_scoring': False,
+                #'dkoes_scoring_old': False,
+                'vina': True
+            }
+        }
+    }
+    cur = conn.cursor()
+    program_from_db = yaml.safe_load(cur.execute("SELECT yaml FROM setup").fetchone()[0])['program']
+    if program_from_db not in programs:
+        raise KeyError(f"Program '{program_from_db}' not found in the dictionary.")
+    if program_from_db == 'vina':
+        return programs[program_from_db]['scoring']
+
+    scoring_from_db = yaml.safe_load(cur.execute("SELECT config FROM setup").fetchone()[0])['scoring']
+    if scoring_from_db not in programs[program_from_db]['scoring']:
+        raise KeyError(f"Scoring '{scoring_from_db}' not found for program '{program_from_db}'.")
+
+    return programs[program_from_db]['scoring'][scoring_from_db]
+
+
 def get_inverted_mol_scores(conn, mol_ids):
     """
     Returns dict of mol_id: score, where docking scores are multiplied by -1 (since all implemented docking methods
@@ -21,7 +58,8 @@ def get_inverted_mol_scores(conn, mol_ids):
     :return:
     """
     scores = get_mol_scores(conn, mol_ids)
-    scores = {i: j * (-1) for i, j in scores.items()}
+    if check_score_order(conn):
+        scores = {i: j * (-1) for i, j in scores.items()}
     return scores
 
 
