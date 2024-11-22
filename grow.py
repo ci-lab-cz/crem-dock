@@ -161,10 +161,10 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('--sample_func', default=None, type=parse_function, required=False, choices=globals().keys(),
-                        help='Choose the function to execute (e.g., sample_csp3).')
-    parser.add_argument('--filter_func', default=None, type=parse_function, required=False, choices=globals().keys(),
-                        help='Choose the function to execute (e.g., filter_max_ring_size).')
+    parser.add_argument('--sample_func', default=None, type=parse_function, required=False, choices=['sample_csp3'],
+                        help='Choose the function to execute (choices: sample_csp3).')
+    parser.add_argument('--filter_func', default=None, type=parse_function, required=False, choices=['filter_max_ring_size'],
+                        help='Choose the function to execute (choices: filter_max_ring_size).')
     parser.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
                         help='choose a protonation program supported by EasyDock.')
     parser.add_argument('--n_iterations', default=None, type=int,
