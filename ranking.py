@@ -133,6 +133,22 @@ def score_by_num_heavy_atoms_fcsp3_bm(conn, mol_ids):
     return stat_scores
 
 
+def score_by_fcsp3_bm_squared(conn, mol_ids):
+    """
+    scoring is calculated by the formula: docking score after scaling * FCsp3_BMc ** 2 after scaling at 0.3
+    :param conn:
+    :param mol_ids:
+    :return:
+    """
+    scores = get_inverted_mol_scores(conn, mol_ids)
+    scale_scores = scale_min_max(scores)
+    mol_dict = dict(zip(mol_ids, get_mols(conn, mol_ids)))
+    fcsp3_bm = {mol_id: CalcFractionCSP3(GetScaffoldForMol(m)) for mol_id, m in mol_dict.items()}
+    fcsp3_scale = {mol_id: fcsp3 / 0.3 if fcsp3 <= 0.3 else 1 for mol_id, fcsp3 in fcsp3_bm.items()}
+    stat_scores = {mol_id: (scale_scores[mol_id] * fcsp3_scale[mol_id] ** 2) for mol_id in mol_ids}
+    return stat_scores
+
+
 def score_by_num_heavy_atoms_qed(conn, mol_ids):
     """
     scoring is calculated by the formula: docking score / number heavy atoms * QED
@@ -153,7 +169,8 @@ def ranking_score(x):
                      3: score_by_num_heavy_atoms,
                      4: score_by_num_heavy_atoms_qed,
                      5: score_by_fcsp3_bm,
-                     6: score_by_num_heavy_atoms_fcsp3_bm}
+                     6: score_by_num_heavy_atoms_fcsp3_bm,
+                     7: score_by_fcsp3_bm_squared}
     try:
         return ranking_types[x]
     except KeyError:
