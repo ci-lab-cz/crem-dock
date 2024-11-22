@@ -6,6 +6,8 @@ import sqlite3
 from functools import partial
 from multiprocessing import Pool
 
+from crem.utils import sample_csp3, filter_max_ring_size
+
 from easydock import database as eadb
 from easydock.run_dock import get_supplied_args, docking
 
@@ -17,6 +19,14 @@ from molecules import get_major_tautomer
 from ranking import ranking_score
 from selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
     selection_and_grow_pareto
+
+
+def parse_function(value):
+    if value in globals():
+        func = globals()[value]
+        if callable(func):
+            return func
+    raise argparse.ArgumentTypeError(f"Invalid function: {value}. Please provide a valid function name.")
 
 
 def supply_parent_child_mols(d):
@@ -151,6 +161,10 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
+    parser.add_argument('--sample_func', default=None, type=parse_function, required=False, choices=globals().keys(),
+                        help='Choose the function to execute (e.g., sample_csp3).')
+    parser.add_argument('--filter_func', default=None, type=parse_function, required=False, choices=globals().keys(),
+                        help='Choose the function to execute (e.g., filter_max_ring_size).')
     parser.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
                         help='choose a protonation program supported by EasyDock.')
     parser.add_argument('--n_iterations', default=None, type=int,
@@ -286,7 +300,7 @@ def main():
                                  dask_client=dask_client, plif_list=args.plif, protein_h=args.protein_h,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements)
+                                 max_replacements=args.max_replacements, sample_func=args.sample_func, filter_func=args.filter_func)
             make_docking = True
 
             if res:
