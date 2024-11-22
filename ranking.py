@@ -174,7 +174,7 @@ def ranking_score(x):
     try:
         return ranking_types[x]
     except KeyError:
-        logging.error(f'Wrong type of a ranking function was passed: {x}. Should be within 1-6.')
+        logging.error(f'Wrong type of a ranking function was passed: {x}. Should be within 1-7.')
         raise
 
 
