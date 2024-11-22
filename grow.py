@@ -165,13 +165,14 @@ def main():
                              'clustering (algorithms 2 and 3).')
     parser.add_argument('--nclust', type=int, default=20, required=False,
                         help='the number of KMeans clusters to consider for molecule selection.')
-    parser.add_argument('--ranking', required=False, type=int, default=1, choices=[1, 2, 3, 4, 5, 6],
+    parser.add_argument('--ranking', required=False, type=int, default=1, choices=[1, 2, 3, 4, 5, 6, 7],
                         help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
                              '2 - ranking based on docking scores and QED, '
                              '3 - ranking based on docking score/number heavy atoms of molecule,'
                              '4 - raking based on docking score/number heavy atoms of molecule and QED,'
                              '5 - ranking based on docking score and FCsp3_BM,'
-                             '6 - ranking based docking score/number heavy atoms of molecule and FCsp3_BM.')
+                             '6 - ranking based docking score/number heavy atoms of molecule and FCsp3_BM,'
+                             '7 - ranking based on docking score and FCsp3_BM**2.')
     parser.add_argument('--rmsd', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     parser.add_argument('--mw', default=450, type=float,
