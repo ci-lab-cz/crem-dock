@@ -20,13 +20,9 @@ from ranking import ranking_score
 from selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
     selection_and_grow_pareto
 
+sample_functions = {'sample_csp3': sample_csp3}
 
-def parse_function(value):
-    if value in globals():
-        func = globals()[value]
-        if callable(func):
-            return func
-    raise argparse.ArgumentTypeError(f"Invalid function: {value}. Please provide a valid function name.")
+filter_functions = {'filter_max_ring_size': filter_max_ring_size}
 
 
 def supply_parent_child_mols(d):
@@ -161,10 +157,10 @@ def main():
                         help='the minimum number of atoms in the fragment which will replace H')
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('--sample_func', default=None, type=parse_function, required=False, choices=['sample_csp3'],
-                        help='Choose the function to execute (choices: sample_csp3).')
-    parser.add_argument('--filter_func', default=None, type=parse_function, required=False, choices=['filter_max_ring_size'],
-                        help='Choose the function to execute (choices: filter_max_ring_size).')
+    parser.add_argument('--sample_func', default=None, required=False, choices=sample_functions.keys(),
+                        help='Choose the function to execute.')
+    parser.add_argument('--filter_func', default=None, required=False, choices=filter_functions.keys(),
+                        help='Choose the function to execute.')
     parser.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
                         help='choose a protonation program supported by EasyDock.')
     parser.add_argument('--n_iterations', default=None, type=int,
@@ -233,6 +229,10 @@ def main():
 
     args = parser.parse_args()
 
+
+    sample_func = sample_functions[args.sample_func] if args.sample_func else None
+    filter_func = filter_functions[args.filter_func] if args.filter_func else None
+
     # depending on input setup operations applied on the first iteration
     # input      make_docking & make_selection
     # SMILES                              True
@@ -300,7 +300,7 @@ def main():
                                  dask_client=dask_client, plif_list=args.plif, protein_h=args.protein_h,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, sample_func=args.sample_func, filter_func=args.filter_func)
+                                 max_replacements=args.max_replacements, sample_func=sample_func, filter_func=filter_func)
             make_docking = True
 
             if res:
