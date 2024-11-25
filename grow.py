@@ -158,9 +158,11 @@ def main():
     parser.add_argument('--max_atoms', default=10, type=int,
                         help='the maximum number of atoms in the fragment which will replace H')
     parser.add_argument('--sample_func', default=None, required=False, choices=sample_functions.keys(),
-                        help='Choose the function to execute.')
+                        help='Choose a function to randomly sample fragments for growing (if max_replacements is '
+                             'given). Otherwise uniform sampling will be used.')
     parser.add_argument('--filter_func', default=None, required=False, choices=filter_functions.keys(),
-                        help='Choose the function to execute.')
+                        help='Choose a function to pre-filter fragments for growing.'
+                             'By default no pre-filtering will be applied.')
     parser.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
                         help='choose a protonation program supported by EasyDock.')
     parser.add_argument('--n_iterations', default=None, type=int,
@@ -230,9 +232,6 @@ def main():
     args = parser.parse_args()
 
 
-    sample_func = sample_functions[args.sample_func] if args.sample_func else None
-    filter_func = filter_functions[args.filter_func] if args.filter_func else None
-
     # depending on input setup operations applied on the first iteration
     # input      make_docking & make_selection
     # SMILES                              True
@@ -289,6 +288,9 @@ def main():
         from easydock.vina_dock import pred_dock_time
     else:
         raise ValueError(f'Illegal program argument was supplied: {args.program}')
+
+    sample_func = sample_functions[args.sample_func] if args.sample_func else None
+    filter_func = filter_functions[args.filter_func] if args.filter_func else None
 
     try:
         while True:
