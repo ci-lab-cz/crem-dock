@@ -127,7 +127,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             p.join()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
         eadb.insert_db(dbname, data=data, cols=cols)
-        logging.debug(f'iteration {iteration}, new mols were inserted in DB')
+        logging.debug(f'iteration {iteration}, {len(data)} new mols were inserted in DB')
         return True
 
     else:
