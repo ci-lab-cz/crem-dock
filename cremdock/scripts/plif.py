@@ -6,7 +6,7 @@ from functools import partial
 from itertools import islice
 from multiprocessing import Pool
 from rdkit import Chem, DataStructs
-from arg_types import filepath_type, cpu_type
+from cremdock.scripts.arg_types import filepath_type, cpu_type
 
 
 def take(n, iterable):

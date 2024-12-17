@@ -7,16 +7,16 @@ from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 from scipy.spatial import distance_matrix
 
-from auxiliary import calc_rtb
-from molecules import neutralize_atoms
-from user_protected_atoms import get_atom_idxs_for_canon
+from cremdock.auxiliary import calc_rtb
+from cremdock.molecules import neutralize_atoms
+from cremdock.user_protected_atoms import get_atom_idxs_for_canon
 
 
 def get_protected_ids(mol, protein_xyz, dist_threshold):
     """
     Returns list of ids of heavy atoms ids which have ALL hydrogen atoms close to the protein
     :param mol: molecule
-    :param protein_xyz: protein file (pdb or pdbqt, explicit hydrogens are not necessary)
+    :param protein_xyz: coordinates of heavy atoms of a protein
     :param dist_threshold: minimum distance to hydrogen atoms
     :return:
     """

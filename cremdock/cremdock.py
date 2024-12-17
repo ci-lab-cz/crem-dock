@@ -11,13 +11,13 @@ from crem.utils import sample_csp3, filter_max_ring_size
 from easydock import database as eadb
 from easydock.run_dock import get_supplied_args, docking
 
-import database
-import user_protected_atoms
-from arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
-from crem_grow import grow_mols_crem
-from molecules import get_major_tautomer
-from ranking import ranking_score
-from selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
+from cremdock import database
+from cremdock import user_protected_atoms
+from cremdock.arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
+from cremdock.crem_grow import grow_mols_crem
+from cremdock.molecules import get_major_tautomer
+from cremdock.ranking import ranking_score
+from cremdock.selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
     selection_and_grow_pareto
 
 sample_functions = {'sample_csp3': sample_csp3}
@@ -132,75 +132,97 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         return False
 
 
-def main():
-    parser = argparse.ArgumentParser(description='Fragment growing within binding pocket with Autodock Vina.',
-                                     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('-i', '--input_frags', metavar='FILENAME', required=False, type=filepath_type,
+def entry_point():
+    parser = argparse.ArgumentParser(description='Fragment growing within a binding pocket guided by molecular docking.',
+                                     formatter_class=lambda prog: argparse.ArgumentDefaultsHelpFormatter(prog, width=80))
+
+    group1 = parser.add_argument_group('Input/output files')
+    group1.add_argument('-i', '--input_frags', metavar='FILENAME', required=False, type=filepath_type,
                         help='SMILES file with input fragments or SDF file with 3D coordinates of pre-aligned input '
                              'fragments (e.g. from PDB complexes). '
                              'If SDF contain <protected_user_ids> field (comma-separated 1-based indices) '
                              'these atoms will be protected from growing. This argument can be omitted if an existed '
                              'output DB is specified, then docking will be continued from the last successful '
                              'iteration. Optional.')
-    parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
+    group1.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
                         help='SQLite DB with docking results. If an existed DB was supplied input fragments will be '
                              'ignored if any and the program will continue docking from the last successful iteration.')
-    parser.add_argument('-d', '--db', metavar='fragments.db', required=False, type=filepath_type, default=None,
-                        help='SQLite DB with fragment replacements.')
-    parser.add_argument('-r', '--radius', default=1, type=int,
-                        help='context radius for replacement.')
-    parser.add_argument('--min_freq', default=0, type=int,
-                        help='the frequency of occurrence of the fragment in the source database.')
-    parser.add_argument('--max_replacements', type=int, required=False, default=None,
-                        help='the maximum number of randomly chosen replacements. Default: None (all replacements).')
-    parser.add_argument('--min_atoms', default=1, type=int,
-                        help='the minimum number of atoms in the fragment which will replace H')
-    parser.add_argument('--max_atoms', default=10, type=int,
-                        help='the maximum number of atoms in the fragment which will replace H')
-    parser.add_argument('--sample_func', default=None, required=False, choices=sample_functions.keys(),
-                        help='Choose a function to randomly sample fragments for growing (if max_replacements is '
-                             'given). Otherwise uniform sampling will be used.')
-    parser.add_argument('--filter_func', default=None, required=False, choices=filter_functions.keys(),
-                        help='Choose a function to pre-filter fragments for growing.'
-                             'By default no pre-filtering will be applied.')
-    parser.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
-                        help='choose a protonation program supported by EasyDock.')
-    parser.add_argument('--n_iterations', default=None, type=int,
+
+    group3 = parser.add_argument_group('Generation parameters')
+    group3.add_argument('--n_iterations', metavar='INTEGER', default=None, type=int,
                         help='maximum number of iterations.')
-    parser.add_argument('-t', '--algorithm', default=2, type=int, choices=[1, 2, 3, 4],
+    group3.add_argument('-t', '--algorithm', metavar='INTEGER', default=2, type=int, choices=[1, 2, 3, 4],
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
-                             'molecules from a cluster cannot be grown they will be replaced with new lower scored '
-                             'ones), 3 - clustering, 4 - Pareto front (MW vs. docking score).')
-    parser.add_argument('--ntop', type=int, default=20, required=False,
+                             'molecules from a cluster cannot be grown they will be replaced with other lower scored '
+                             'ones), 3 - clustering (fixed number of molecules is selected irrespective their ability '
+                             'to be grown), 4 - Pareto front (MW vs. docking score).')
+    group3.add_argument('--ntop', metavar='INTEGER', type=int, default=2, required=False,
                         help='the number of the best molecules to select for the next iteration in the case of greedy '
                              'search (algorithm 1) or the number of molecules from each cluster in the case of '
                              'clustering (algorithms 2 and 3).')
-    parser.add_argument('--nclust', type=int, default=20, required=False,
+    group3.add_argument('--nclust', metavar='INTEGER', type=int, default=20, required=False,
                         help='the number of KMeans clusters to consider for molecule selection.')
-    parser.add_argument('--ranking', required=False, type=int, default=1, choices=[1, 2, 3, 4, 5, 6, 7],
-                        help='the number of the algorithm for ranking molecules: 1 - ranking based on docking scores, '
-                             '2 - ranking based on docking scores and QED, '
-                             '3 - ranking based on docking score/number heavy atoms of molecule,'
-                             '4 - raking based on docking score/number heavy atoms of molecule and QED,'
-                             '5 - ranking based on docking score and FCsp3_BM,'
-                             '6 - ranking based docking score/number heavy atoms of molecule and FCsp3_BM,'
+    group3.add_argument('--ranking', metavar='INTEGER', required=False, type=int, default=1,
+                        choices=[1, 2, 3, 4, 5, 6, 7],
+                        help='the number of the algorithm for ranking molecules:\n'
+                             '1 - ranking based on docking scores,\n'
+                             '2 - ranking based on docking scores and QED,\n'
+                             '3 - ranking based on docking score/number heavy atoms of molecule,\n'
+                             '4 - raking based on docking score/number heavy atoms of molecule and QED,\n'
+                             '5 - ranking based on docking score and FCsp3_BM,\n'
+                             '6 - ranking based docking score/number heavy atoms of molecule and FCsp3_BM,\n'
                              '7 - ranking based on docking score and FCsp3_BM**2.')
-    parser.add_argument('--rmsd', type=float, default=2, required=False,
+
+    group2 = parser.add_argument_group('CReM parameters')
+    group2.add_argument('-d', '--db', metavar='FILENAME', required=False, type=filepath_type, default=None,
+                        help='CReM fragment DB.')
+    group2.add_argument('-r', '--radius', metavar='INTEGER', default=1, type=int,
+                        help='context radius for replacement.')
+    group2.add_argument('--min_freq', metavar='INTGER', default=0, type=int,
+                        help='the frequency of occurrence of the fragment in the source database.')
+    group2.add_argument('--max_replacements', metavar='INTEGER', type=int, required=False, default=None,
+                        help='the maximum number of randomly chosen replacements. Default: None (all replacements).')
+    group2.add_argument('--min_atoms', metavar='INTEGER', default=1, type=int,
+                        help='the minimum number of atoms in the fragment which will replace H')
+    group2.add_argument('--max_atoms', metavar='INTEGER', default=10, type=int,
+                         help='the maximum number of atoms in the fragment which will replace H')
+    group2.add_argument('--sample_func', default=None, required=False, choices=sample_functions.keys(),
+                        help='Choose a function to randomly sample fragments for growing (if max_replacements is '
+                             'given). Otherwise uniform sampling will be used.')
+    group2.add_argument('--filter_func', default=None, required=False, choices=filter_functions.keys(),
+                        help='Choose a function to pre-filter fragments for growing.'
+                             'By default no pre-filtering will be applied.')
+
+    group4 = parser.add_argument_group('Filters')
+    group4.add_argument('--rmsd', metavar='NUMERIC', type=float, default=2, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
-    parser.add_argument('--mw', default=450, type=float,
+    group4.add_argument('--mw', metavar='NUMERIC', default=450, type=float,
                         help='maximum ligand molecular weight to pass on the next iteration.')
-    parser.add_argument('--rtb', type=int, default=5, required=False,
+    group4.add_argument('--rtb', metavar='INTEGER', type=int, default=5, required=False,
                         help='maximum allowed number of rotatable bonds in a compound.')
-    parser.add_argument('--logp', type=float, default=4, required=False,
+    group4.add_argument('--logp', metavar='NUMERIC', type=float, default=4, required=False,
                         help='maximum allowed logP of a compound.')
-    parser.add_argument('--tpsa', type=float, default=120, required=False,
+    group4.add_argument('--tpsa', metavar='NUMERIC', type=float, default=120, required=False,
                         help='maximum allowed TPSA of a compound.')
-    parser.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
+
+    group6 = parser.add_argument_group('PLIF filters')
+    group6.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
                         help='PDB file with the same protein as for docking, but it should have all hydrogens explicit.'
                              'Required for determination of growing points in molecules and PLIF detection.')
-    parser.add_argument('--program', metavar='STRING', default='vina', required=False, choices=['vina', 'gnina'],
-                        help='name of a docking program. Choices: vina (default), gnina.')
-    parser.add_argument('--config', metavar='FILENAME', required=False,
+    group6.add_argument('--plif', metavar='STRING', default=None, required=False, nargs='*',
+                        type=str_lower_type,
+                        help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
+                             'interaction which should be observed for a ligand to pass to the next iteration. Derive '
+                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
+    group6.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
+                        help='cutoff of Tversky similarity, value between 0 and 1.')
+
+    group5 = parser.add_argument_group('Docking parameters')
+    group5.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
+                        help='choose a protonation program supported by EasyDock.')
+    group5.add_argument('--program', default='vina', required=False, choices=['vina', 'gnina'],
+                        help='name of a docking program.')
+    group5.add_argument('--config', metavar='FILENAME', required=False,
                         help='YAML file with parameters used by docking program.\n'
                              'vina.yml\n'
                              'protein: path to pdbqt file with a protein\n'
@@ -209,24 +231,20 @@ def main():
                              'n_poses: 10\n'
                              'seed: -1\n'
                              'gnina.yml\n')
-    parser.add_argument('--plif', default=None, required=False, nargs='*', type=str_lower_type,
-                        help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
-                             'interaction which should be observed for a ligand to pass to the next iteration. Derive '
-                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
-    parser.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
-                        help='cutoff of Tversky similarity, value between 0 and 1.')
-    parser.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
+    group5.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
                         help='text file with addresses of nodes of dask SSH cluster. The most typical, it can be '
                              'passed as $PBS_NODEFILE variable from inside a PBS script. The first line in this file '
                              'will be the address of the scheduler running on the standard port 8786. If omitted, '
                              'calculations will run on a single machine as usual.')
-    parser.add_argument('--log', metavar='FILENAME', required=False, type=str, default=None,
+
+    group7 = parser.add_argument_group('Auxiliary parameters')
+    group7.add_argument('--log', metavar='FILENAME', required=False, type=str, default=None,
                         help='log file to collect progress and debug messages. If omitted, the log file with the same '
                              'name as output DB will be created.')
-    parser.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
+    group7.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
-    parser.add_argument('-c', '--ncpu', default=1, type=cpu_type,
+    group7.add_argument('-c', '--ncpu', metavar='INTEGER', default=1, type=cpu_type,
                         help='number of cpus.')
 
     args = parser.parse_args()
@@ -323,4 +341,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    entry_point()

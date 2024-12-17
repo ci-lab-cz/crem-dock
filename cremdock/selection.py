@@ -8,10 +8,10 @@ from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 from sklearn.cluster import KMeans
 
-from database import get_mols
-from auxiliary import sort_two_lists, calc_rtb
-from crem_grow import get_protein_heavy_atom_xyz, grow_mol_crem, grow_mols_crem
-from molecules import get_mol_ids
+from cremdock.database import get_mols
+from cremdock.auxiliary import sort_two_lists, calc_rtb
+from cremdock.crem_grow import get_protein_heavy_atom_xyz, grow_mol_crem, grow_mols_crem
+from cremdock.molecules import get_mol_ids
 
 
 def selection_and_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):

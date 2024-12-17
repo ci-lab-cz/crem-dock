@@ -11,10 +11,10 @@ from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 
-from auxiliary import calc_rtb
-from molecules import get_isomers, get_rmsd
-from user_protected_atoms import get_canon_for_atom_idx, get_protected_canon_ids
-from scripts import plif
+from cremdock.auxiliary import calc_rtb
+from cremdock.molecules import get_isomers, get_rmsd
+from cremdock.user_protected_atoms import get_canon_for_atom_idx, get_protected_canon_ids
+from cremdock.scripts import plif
 
 
 def create_db(fname, args, args_to_save):

@@ -4,7 +4,7 @@ import yaml
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
 from rdkit.Chem.rdMolDescriptors import CalcFractionCSP3
 
-from database import get_mols, get_mol_qeds, get_mol_scores
+from cremdock.database import get_mols, get_mol_qeds, get_mol_scores
 
 
 """
