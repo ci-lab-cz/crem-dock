@@ -67,7 +67,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         mol_data = database.get_docked_mol_data(conn, iteration)
         logging.debug(f'iteration {iteration}, docked mols count: {mol_data.shape[0]}')
 
-        if iteration != 1:
+        if iteration != 1 and rmsd is not None:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
         if plif_list and len(mol_data.index) > 0:
             mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
@@ -197,7 +197,7 @@ def entry_point():
                              'By default no pre-filtering will be applied.')
 
     group4 = parser.add_argument_group('Filters')
-    group4.add_argument('--rmsd', metavar='NUMERIC', type=float, default=2, required=False,
+    group4.add_argument('--rmsd', metavar='NUMERIC', type=float, default=None, required=False,
                         help='maximum allowed RMSD value relative to a parent compound to pass on the next iteration.')
     group4.add_argument('--mw', metavar='NUMERIC', default=450, type=float,
                         help='maximum ligand molecular weight to pass on the next iteration.')
