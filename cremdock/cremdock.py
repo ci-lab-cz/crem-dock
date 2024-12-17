@@ -252,7 +252,6 @@ def entry_point():
 
     args = parser.parse_args()
 
-
     # depending on input setup operations applied on the first iteration
     # input      make_docking & make_selection
     # SMILES                              True

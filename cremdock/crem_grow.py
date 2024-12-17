@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 from crem.crem import grow_mol
-from rdkit import Chem
+from rdkit import Chem, rdBase
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 from scipy.spatial import distance_matrix
@@ -89,6 +89,7 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
             protected_ids.append(a.GetIdx())
             a.ClearProp('__tmp')
 
+    blocker = rdBase.BlockLogs()  # suppress CReM warnings, https://github.com/rdkit/rdkit/issues/2683
     try:
         res = list(grow_mol(mol, protected_ids=protected_ids, return_rxn=False, return_mol=True, ncores=ncpu,
                             symmetry_fixes=True, mw=(1, mw), rtb=(0, rtb), logp=(-100, logp), tpsa=(0, tpsa), **kwargs))
