@@ -15,6 +15,7 @@ from cremdock import database
 from cremdock import user_protected_atoms
 from cremdock.arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
 from cremdock.crem_grow import grow_mols_crem
+from cremdock.database import get_protein_heavy_atom_xyz
 from cremdock.molecules import get_major_tautomer
 from cremdock.ranking import ranking_score
 from cremdock.selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
@@ -40,6 +41,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
     logging.info(f'iteration {iteration} started')
     conn = sqlite3.connect(dbname)
     logging.debug(f'iteration {iteration}, make_docking={make_docking}')
+    protein_xyz = get_protein_heavy_atom_xyz(dbname)
     if make_docking:
         if protonation:
             logging.debug(f'iteration {iteration}, start protonation')
@@ -59,7 +61,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                 eadb.update_db(conn, mol_id, res)
         logging.debug(f'iteration {iteration}, end docking')
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
-        logging.debug(f'iteration {iteration}, DB was updated, rmsd and plif were calculted')
+        logging.debug(f'iteration {iteration}, DB was updated, rmsd and plif were calculated')
 
         res = dict()
         mol_data = database.get_docked_mol_data(conn, iteration)
@@ -76,29 +78,30 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             logging.debug(f'iteration {iteration}, start selection and growing')
             mols = database.get_mols(conn, mol_data.index)
             if alg_type == 1:
-                res = selection_and_grow_greedy(mols=mols, conn=conn, protein=protein_h,
+                res = selection_and_grow_greedy(mols=mols, conn=conn, protein_xyz=protein_xyz,
                                                 ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                 ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
-                res = grow_mols_crem(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp,
+                res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                      max_tpsa=tpsa, ncpu=ncpu, **kwargs)
             elif alg_type == 2:
-                res = selection_and_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
+                res = selection_and_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
                                                     ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                     ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type == 3:
-                res = selection_and_grow_clust(mols=mols, conn=conn, nclust=nclust, protein=protein_h,
+                res = selection_and_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
                                                ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             elif alg_type == 4:
-                res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                                protein=protein_h, ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp,
+                                                max_tpsa=tpsa, protein_xyz=protein_xyz,
+                                                ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
             logging.debug(f'iteration {iteration}, end selection and growing')
 
     else:
         logging.debug(f'iteration {iteration}, docking was omitted, all mols are grown')
         mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
-        res = grow_mols_crem(mols=mols, protein=protein_h, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+        res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                              ncpu=ncpu, **kwargs)
         logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
 
@@ -207,8 +210,8 @@ def entry_point():
 
     group6 = parser.add_argument_group('PLIF filters')
     group6.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
-                        help='PDB file with the same protein as for docking, but it should have all hydrogens explicit.'
-                             'Required for determination of growing points in molecules and PLIF detection.')
+                        help='PDB file with the same protein as for docking, but it should have all hydrogens '
+                             'explicit. Required for correct PLIF detection.')
     group6.add_argument('--plif', metavar='STRING', default=None, required=False, nargs='*',
                         type=str_lower_type,
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '

@@ -40,14 +40,19 @@ def get_protected_ids(mol, protein_xyz, dist_threshold):
     return output_ids
 
 
-def get_protein_heavy_atom_xyz(protein):
+def __get_protein_heavy_atom_xyz(protein):
     """
     Returns coordinates of heavy atoms
     :param protein: protein file (pdb or pdbqt), explicit hydrogens are not necessary
     :return: 2d_array (n_atoms x 3)
     """
-    pdb_block = open(protein).readlines()
-    protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block]), sanitize=False)
+    with open(protein) as f:
+        pdb_block = f.read()
+    return get_protein_heavy_atoms_xyz_from_string(pdb_block)
+
+
+def get_protein_heavy_atoms_xyz_from_string(pdb_block):
+    protein = Chem.MolFromPDBBlock('\n'.join([line[:66] for line in pdb_block.split('\n')]), sanitize=False)
     if protein is None:
         raise ValueError("Protein structure is incorrect. Please check protein pdbqt file.")
     xyz = protein.GetConformer().GetPositions()
@@ -98,11 +103,11 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
     return res
 
 
-def grow_mols_crem(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
+def grow_mols_crem(mols, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
     """
 
     :param mols: list of molecules
-    :param protein: protein file (pdb or pdbqt), explicit hydrogens are not necessary
+    :param protein_xyz: 2D array of heavy atoms coordinates
     :param max_mw:
     :param max_rtb:
     :param max_logp:
@@ -113,7 +118,6 @@ def grow_mols_crem(mols, protein, max_mw, max_rtb, max_logp, max_tpsa, h_dist_th
     :return: dict of parent mols and lists of corresponding generated mols
     """
     res = dict()
-    protein_xyz = get_protein_heavy_atom_xyz(protein)
     for mol in mols:
         tmp = grow_mol_crem(mol, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
                             h_dist_threshold=h_dist_threshold, ncpu=ncpu, **kwargs)

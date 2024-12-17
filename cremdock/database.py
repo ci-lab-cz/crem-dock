@@ -12,6 +12,7 @@ from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 
 from cremdock.auxiliary import calc_rtb
+from cremdock.crem_grow import get_protein_heavy_atoms_xyz_from_string
 from cremdock.molecules import get_isomers, get_rmsd
 from cremdock.user_protected_atoms import get_canon_for_atom_idx, get_protected_canon_ids
 from cremdock.scripts import plif
@@ -305,3 +306,11 @@ def check_any_molblock_isnull(dbname):
         return False
     else:
         return True
+
+
+def get_protein_heavy_atom_xyz(dbname):
+    conn = sqlite3.connect(dbname)
+    cur = conn.cursor()
+    cur.execute("SELECT protein FROM setup")
+    pdb_block = cur.fetchone()[0]
+    return get_protein_heavy_atoms_xyz_from_string(pdb_block)

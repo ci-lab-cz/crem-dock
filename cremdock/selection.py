@@ -10,16 +10,17 @@ from sklearn.cluster import KMeans
 
 from cremdock.database import get_mols
 from cremdock.auxiliary import sort_two_lists, calc_rtb
-from cremdock.crem_grow import get_protein_heavy_atom_xyz, grow_mol_crem, grow_mols_crem
+from cremdock.crem_grow import grow_mol_crem, grow_mols_crem
 from cremdock.molecules import get_mol_ids
 
 
-def selection_and_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1, **kwargs):
+def selection_and_grow_greedy(mols, conn, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1,
+                              **kwargs):
     """
 
     :param mols:
     :param conn:
-    :param protein:
+    :param protein_xyz:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
@@ -33,19 +34,19 @@ def selection_and_grow_greedy(mols, conn, protein, max_mw, max_rtb, max_logp, ma
     if len(mols) == 0:
         return []
     selected_mols = select_top_mols(mols, conn, ntop, ranking_func)
-    res = grow_mols_crem(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+    res = grow_mols_crem(selected_mols, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
                          ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_and_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1,
-                             **kwargs):
+def selection_and_grow_clust(mols, conn, nclust, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, ntop,
+                             ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
     :param conn:
     :param nclust:
-    :param protein:
+    :param protein_xyz:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
@@ -67,19 +68,19 @@ def selection_and_grow_clust(mols, conn, nclust, protein, max_mw, max_rtb, max_l
     for cluster in sorted_clusters:
         for i in cluster[:ntop]:
             selected_mols.append(mol_dict[i])
-    res = grow_mols_crem(selected_mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
+    res = grow_mols_crem(selected_mols, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa,
                          ncpu=ncpu, **kwargs)
     return res
 
 
-def selection_and_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func,
-                                  ncpu=1, **kwargs):
+def selection_and_grow_clust_deep(mols, conn, nclust, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, ntop,
+                                  ranking_func, ncpu=1, **kwargs):
     """
 
     :param mols:
     :param conn:
     :param nclust:
-    :param protein:
+    :param protein_xyz:
     :param max_mw:
     :param max_rtb:
     :param max_logp:
@@ -98,7 +99,6 @@ def selection_and_grow_clust_deep(mols, conn, nclust, protein, max_mw, max_rtb, 
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))  # {mol_id: mol, ...}
-    protein_xyz = get_protein_heavy_atom_xyz(protein)
     # grow up to N top scored mols from each cluster
     for cluster in sorted_clusters:
         processed_mols = 0
@@ -132,7 +132,8 @@ def identify_pareto(df):
     return population_ids[pareto_front].tolist()
 
 
-def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein, ranking_func, ncpu, **kwargs):
+def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein_xyz, ranking_func, ncpu,
+                              **kwargs):
     """
 
     :param mols:
@@ -141,7 +142,7 @@ def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, p
     :param max_rtb:
     :param max_logp:
     :param max_tpsa:
-    :param protein:
+    :param protein_xyz:
     :param ranking_func:
     :param ncpu:
     :param kwargs:
@@ -161,7 +162,7 @@ def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, p
     pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
     mols_pareto = identify_pareto(pareto_front_df)
     mols = get_mols(conn, mols_pareto)
-    res = grow_mols_crem(mols, protein, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
+    res = grow_mols_crem(mols, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
     return res
 
 
