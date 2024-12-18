@@ -8,6 +8,7 @@ This tool automates generation of molecules using CReM starting from a set of fr
 - different objective functions (docking score, docking score augmented with QED or the fraction of sp3-carbon atoms, docking score divided on the number of heavy atoms, etc)
 - user-defined thresholds for maximum allowed physicochemical parameters (MW, logP, RTB, TPSA)
 - using protein-ligand interaction fingerprints (ProLIF) and/or RMSD to a parent molecule to control the pose of a constructed ligand
+- indirect control over synthetic feasibility of generated structures (based on CReM parameters)
 - support docking programs integrated in EasyDock, including ligand preparation steps and distributed calculations
 - output is SQLite database from which a user can retrieve all necessary information 
 - continue interrupted/unfinished generation by rerun of the same command
