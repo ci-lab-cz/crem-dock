@@ -2,6 +2,8 @@
 
 This tool automates generation of molecules using CReM starting from a set of fragments by their growing within a protein binding site guided by molecular docking (EasyDock).
 
+![cremdock](./pics/crem-dock-600.gif)
+
 ## Features
 - fully automated workflow
 - different selection strategies (greedy, Pareto, k-means clustering)
