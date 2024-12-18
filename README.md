@@ -36,8 +36,8 @@ Generation is stopped if no more molecules can be grown to satisfy the defined p
 ## Usage
 
 ### Modes
-1. Generation of molecules which starts from a set of fragment supplied as SMILES or 2D SDF. In these case the supplied fragments are docked, pass PLIF/RMSD check (optional) and best candidates are used for growing on the next iteration.
-2. Expansion of a co-crystallized ligand by supplying 3D ligand structure (SDF). In this case an input molecule is directly going to the growing stage.
+1. **Hit generation**. Generation of molecules which starts from a set of fragment supplied as SMILES or 2D SDF. In these case the supplied fragments are docked, pass PLIF/RMSD check (optional) and best candidates are used for growing on the next iteration.
+2. **Hit expansion**. Expansion of a co-crystallized ligand by supplying 3D ligand structure (SDF). In this case an input molecule is directly going to the growing stage.
 
 
 ### Notes
