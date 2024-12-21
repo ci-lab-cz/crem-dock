@@ -127,7 +127,7 @@ def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, ncpu=1):
     return df
 
 
-def main():
+def entry_point():
     parser = argparse.ArgumentParser(description='Calculate PLIF for an input protein and molecules.',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-p', '--protein', metavar='FILENAME', required=True, type=filepath_type,
@@ -152,4 +152,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    entry_point()

@@ -30,6 +30,7 @@ setuptools.setup(
         'easydock': ['easydock>=0.3.1'],
     },
     entry_points={'console_scripts':
-                      ['cremdock = cremdock.cremdock:entry_point']},
+                      ['cremdock = cremdock.cremdock:entry_point',
+                       'cremdock_plif = cremdock.scripts.plif:entry_point']},
     scripts=[]
 )
