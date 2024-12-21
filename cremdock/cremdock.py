@@ -37,7 +37,7 @@ def supply_parent_child_mols(d):
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_score_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
-                   protein_h=None, plif_cutoff=1, prefix=None, **kwargs):
+                   plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
     logging.info(f'iteration {iteration} started')
     conn = sqlite3.connect(dbname)
     logging.debug(f'iteration {iteration}, make_docking={make_docking}')
@@ -60,7 +60,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             if res:
                 eadb.update_db(conn, mol_id, res)
         logging.debug(f'iteration {iteration}, end docking')
-        database.update_db(conn, plif_ref=plif_list, plif_protein_fname=protein_h, ncpu=ncpu)
+        database.update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
         logging.debug(f'iteration {iteration}, DB was updated, rmsd and plif were calculated')
 
         res = dict()
@@ -179,7 +179,7 @@ def entry_point():
     group2 = parser.add_argument_group('CReM parameters')
     group2.add_argument('-d', '--db', metavar='FILENAME', required=False, type=filepath_type, default=None,
                         help='CReM fragment DB.')
-    group2.add_argument('-r', '--radius', metavar='INTEGER', default=1, type=int,
+    group2.add_argument('-r', '--radius', metavar='INTEGER', default=3, type=int,
                         help='context radius for replacement.')
     group2.add_argument('--min_freq', metavar='INTGER', default=0, type=int,
                         help='the frequency of occurrence of the fragment in the source database.')
@@ -209,9 +209,6 @@ def entry_point():
                         help='maximum allowed TPSA of a compound.')
 
     group6 = parser.add_argument_group('PLIF filters')
-    group6.add_argument('--protein_h', metavar='protein.pdb', required=False, type=filepath_type,
-                        help='PDB file with the same protein as for docking, but it should have all hydrogens '
-                             'explicit. Required for correct PLIF detection.')
     group6.add_argument('--plif', metavar='STRING', default=None, required=False, nargs='*',
                         type=str_lower_type,
                         help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
@@ -219,6 +216,9 @@ def entry_point():
                              'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
     group6.add_argument('--plif_cutoff', metavar='NUMERIC', default=1, required=False, type=similarity_value_type,
                         help='cutoff of Tversky similarity, value between 0 and 1.')
+    group6.add_argument('--plif_protein', metavar='protein.pdb', required=False, type=filepath_type,
+                        help='PDB file with the same protein as for docking, but it should have all hydrogens '
+                             'explicit. Required for correct PLIF detection.')
 
     group5 = parser.add_argument_group('Docking parameters')
     group5.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
@@ -273,7 +273,7 @@ def entry_point():
         make_docking = True
 
     else:
-        database.create_db(args.output, args, args_to_save=['protein_h'])
+        database.create_db(args.output, args, args_to_save=['plif_protein'])
         make_docking = database.insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
 
@@ -287,7 +287,7 @@ def entry_point():
                         'will result in selection on each iteration more than 20 molecules that may slower '
                         'computations.')
 
-    if args.plif is not None and (args.protein_h is None or not os.path.isfile(args.protein_h)):
+    if args.plif is not None and (args.plif_protein is None or not os.path.isfile(args.plif_protein)):
         raise FileNotFoundError('PLIF pattern was specified but the protein file is missing or was not supplied. '
                                 'Calculation was aborted.')
 
@@ -319,7 +319,7 @@ def entry_point():
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.algorithm, ranking_score_func=ranking_score(args.ranking), ncpu=args.ncpu,
                                  protonation=args.protonation, make_docking=make_docking,
-                                 dask_client=dask_client, plif_list=args.plif, protein_h=args.protein_h,
+                                 dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                  max_replacements=args.max_replacements, sample_func=sample_func, filter_func=filter_func)
