@@ -294,7 +294,7 @@ def get_last_iter_from_db(db_fname):
     with sqlite3.connect(db_fname) as conn:
         cur = conn.cursor()
         res = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0]
-        return res + 1
+        return res
 
 
 def check_any_molblock_isnull(dbname):

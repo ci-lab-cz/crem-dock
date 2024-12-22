@@ -322,23 +322,24 @@ def entry_point():
                                  dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, sample_func=sample_func, filter_func=filter_func)
+                                 max_replacements=args.max_replacements, sample_func=sample_func,
+                                 filter_func=filter_func,
+                                 final_iteration=args.n_iterations is not None and iteration == args.n_iterations + 1)
             make_docking = True
 
             if res:
-                iteration += 1
-                if args.n_iterations and iteration == args.n_iterations:
+                if args.n_iterations and iteration == args.n_iterations + 1:  # +1 to allow docking of compounds created on the last iteration
                     break
+                iteration += 1
             else:
-                if iteration == 1:
-                    # 0 successful iteration for finally printing
-                    iteration = 0
                 break
 
     except Exception as e:
         logging.exception(e, stack_info=True)
 
     finally:
+        if args.n_iterations and iteration == args.n_iterations + 1:
+            iteration = args.n_iterations
         logging.info(f'{iteration} iterations were completed')
 
 
