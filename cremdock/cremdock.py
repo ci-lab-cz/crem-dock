@@ -37,20 +37,20 @@ def supply_parent_child_mols(d):
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_score_func, ncpu, protonation, make_docking=True, dask_client=None, plif_list=None,
-                   plif_protein=None, plif_cutoff=1, prefix=None, **kwargs):
-    logging.info(f'iteration {iteration} started')
+                   plif_protein=None, plif_cutoff=1, prefix=None, final_iteration=False, **kwargs):
+    logging.info(f'iteration {iteration} started') if not final_iteration else None  # supress logging on the final iteration where only docking is occurred
     conn = sqlite3.connect(dbname)
-    logging.debug(f'iteration {iteration}, make_docking={make_docking}')
+    logging.debug(f'iteration {iteration}, make_docking={make_docking}') if not final_iteration else None
     protein_xyz = get_protein_heavy_atom_xyz(dbname)
     if make_docking:
         if protonation:
-            logging.debug(f'iteration {iteration}, start protonation')
+            logging.debug(f'iteration {iteration}, start protonation') if not final_iteration else None
             eadb.add_protonation(dbname, program=protonation, tautomerize=False,
                                  add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
-            logging.debug(f'iteration {iteration}, end protonation')
-        logging.debug(f'iteration {iteration}, start mols selection for docking')
+            logging.debug(f'iteration {iteration}, end protonation') if not final_iteration else None
+        logging.debug(f'iteration {iteration}, start mols selection for docking') if not final_iteration else None
         mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
-        logging.debug(f'iteration {iteration}, start docking')
+        logging.debug(f'iteration {iteration}, start docking') if not final_iteration else None
         for mol_id, res in docking(mols,
                                    dock_func=mol_dock_func,
                                    dock_config=config,
@@ -59,19 +59,27 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    dask_client=dask_client):
             if res:
                 eadb.update_db(conn, mol_id, res)
-        logging.debug(f'iteration {iteration}, end docking')
+        logging.debug(f'iteration {iteration}, end docking') if not final_iteration else None
         database.update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
-        logging.debug(f'iteration {iteration}, DB was updated, rmsd and plif were calculated')
+        logging.debug(f'iteration {iteration}, DB was updated (including rmsd and plif if set)') if not final_iteration else None
 
         res = dict()
         mol_data = database.get_docked_mol_data(conn, iteration)
-        logging.debug(f'iteration {iteration}, docked mols count: {mol_data.shape[0]}')
+        logging.info(f'iteration {iteration if not final_iteration else iteration -1}, docked mols count: {mol_data.shape[0]}')
 
+        if final_iteration:  # make only docking
+            return False
+
+        rmsd_plif_flag = False
         if iteration != 1 and rmsd is not None:
             mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
+            rmsd_plif_flag = True
         if plif_list and len(mol_data.index) > 0:
             mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
-        logging.debug(f'iteration {iteration}, docked mols count after rmsd/plif filters: {mol_data.shape[0]}')
+            rmsd_plif_flag = True
+        if rmsd_plif_flag:
+            logging.info(f'iteration {iteration}, docked mols count after rmsd/plif filters: {mol_data.shape[0]}')
+
         if len(mol_data.index) == 0:
             logging.info(f'iteration {iteration}, no molecules were selected for growing')
         else:
@@ -105,7 +113,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                              ncpu=ncpu, **kwargs)
         logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
 
-    logging.debug(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values())}')
+    logging.info(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values())}')
 
     if res:
         res = user_protected_atoms.assign_protected_ids(res)
@@ -127,8 +135,12 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             p.join()
         cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
         eadb.insert_db(dbname, data=data, cols=cols)
-        logging.debug(f'iteration {iteration}, {len(data)} new mols were inserted in DB')
-        return True
+        logging.info(f'iteration {iteration}, {len(data)} new mols were inserted in DB after filtering by '
+                     f'physicochemical properties')
+        if data:
+            return True
+        else:
+            return False  # if data is empty
 
     else:
         logging.info(f'iteration {iteration}, growth was stopped')
@@ -244,6 +256,10 @@ def entry_point():
     group7.add_argument('--log', metavar='FILENAME', required=False, type=str, default=None,
                         help='log file to collect progress and debug messages. If omitted, the log file with the same '
                              'name as output DB will be created.')
+    group7.add_argument('--log_level', metavar='STRING', required=False, type=int, default=2,
+                        choices=list(range(6)),
+                        help='the level of logging: 0 - NOTSET, 1 - DEBUG, 2 - INFO, 3 - WARNING, 4 - ERROR, '
+                             '5 - CRITICAL.')
     group7.add_argument('--prefix', metavar='STRING', required=False, type=str, default=None,
                         help='prefix which will be added to all names. This might be useful if multiple runs are made '
                              'which will be analyzed together.')
@@ -279,7 +295,7 @@ def entry_point():
 
     if not args.log:
         args.log = os.path.splitext(os.path.abspath(args.output))[0] + '.log'
-    logging.basicConfig(filename=args.log, encoding='utf-8', level=logging.DEBUG, datefmt='%Y-%m-%d %H:%M:%S',
+    logging.basicConfig(filename=args.log, encoding='utf-8', level=args.log_level * 10, datefmt='%Y-%m-%d %H:%M:%S',
                         format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
 
     if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
@@ -317,8 +333,8 @@ def entry_point():
             res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
-                                 alg_type=args.algorithm, ranking_score_func=ranking_score(args.ranking), ncpu=args.ncpu,
-                                 protonation=args.protonation, make_docking=make_docking,
+                                 alg_type=args.algorithm, ranking_score_func=ranking_score(args.ranking),
+                                 ncpu=args.ncpu, protonation=args.protonation, make_docking=make_docking,
                                  dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
