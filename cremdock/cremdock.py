@@ -166,15 +166,15 @@ def entry_point():
     group3 = parser.add_argument_group('Generation parameters')
     group3.add_argument('--n_iterations', metavar='INTEGER', default=None, type=int,
                         help='maximum number of iterations.')
-    group3.add_argument('-t', '--algorithm', metavar='INTEGER', default=2, type=int, choices=[1, 2, 3, 4],
+    group3.add_argument('-t', '--search', metavar='INTEGER', default=2, type=int, choices=[1, 2, 3, 4],
                         help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
                              'molecules from a cluster cannot be grown they will be replaced with other lower scored '
                              'ones), 3 - clustering (fixed number of molecules is selected irrespective their ability '
                              'to be grown), 4 - Pareto front (MW vs. docking score).')
     group3.add_argument('--ntop', metavar='INTEGER', type=int, default=2, required=False,
                         help='the number of the best molecules to select for the next iteration in the case of greedy '
-                             'search (algorithm 1) or the number of molecules from each cluster in the case of '
-                             'clustering (algorithms 2 and 3).')
+                             'search (1) or the number of molecules from each cluster in the case of '
+                             'clustering (search 2 and 3).')
     group3.add_argument('--nclust', metavar='INTEGER', type=int, default=20, required=False,
                         help='the number of KMeans clusters to consider for molecule selection.')
     group3.add_argument('--ranking', metavar='INTEGER', required=False, type=int, default=1,
