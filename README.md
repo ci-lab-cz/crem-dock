@@ -54,7 +54,7 @@ Details about creation of custom database is at the [CReM repository](https://gi
 
 - simplest example (disregarding protonation and protein-ligand interaction fingerprints)
 ```bash
-cremdock -i example/input.smi -o example/mode1_1.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2
+cremdock -i example/input.smi -o example/mode1_1.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2
 ```
 `input.smi` - set of starting fragments  
 `mode1_1.db` - output DB  
@@ -71,7 +71,7 @@ cremdock -i example/input.smi -o example/mode1_1.db -d chembl22_sa2_hac12.db --n
 It is recommended to protonate compounds before docking. This can be achieved by using the argument `--protonation` and specify the protonation model. 
 
 ```bash
-cremdock -i example/input.smi -o example/mode1_2.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --protonation pkasolver
+cremdock -i example/input.smi -o example/mode1_2.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --protonation pkasolver
 ```
 
 
@@ -87,7 +87,7 @@ Running this script is not necessary, a user may select contacts manually, howev
 
 - run `cremdock` with PLIF constraints and enabled protonation  
 ```bash
-cremdock -i example/input.smi -o example/mode1_3.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver 
+cremdock -i example/input.smi -o example/mode1_3.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver 
 ```
 There are three additional arguments:  
 `--plif` - takes a list of contacts  
@@ -99,7 +99,7 @@ There are three additional arguments:
 
 Custom sampling functions can be implemented to bias selection of fragments for decoration of a parent molecule. We integrated a function which selects fragments proportionally to their fractiomn of sp<sup>3</sup> carbon atoms. However, the most useful approach would be to use starting fragments with a high fraction of sp<sup>3</sup> atoms. 
 ```bash
-cremdock -i example/input.smi -o example/mode1_4.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --sample_func sample_csp3
+cremdock -i example/input.smi -o example/mode1_4.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --sample_func sample_csp3
 ```
 
 - using augmented scoring function
@@ -107,7 +107,7 @@ cremdock -i example/input.smi -o example/mode1_4.db -d chembl22_sa2_hac12.db --n
 There are several implemented objective functions. One of them is a geometric mean of a docking score (linearly scaled to the range [0;1]) and QED. To use a spceific objective functions one should set argument `--ranking` with a corresponding number. The full list is available in the help message (`-h`).
 
 ```bash
-cremdock -i example/input.smi -o example/mode1_5.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --ranking 2
+cremdock -i example/input.smi -o example/mode1_5.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --ranking 2
 ```
 
 
@@ -116,7 +116,7 @@ cremdock -i example/input.smi -o example/mode1_5.db -d chembl22_sa2_hac12.db --n
 It is important to set reasonable thresholds for some physicochemical properties to avoid exploration of undesirable chemical space and save time. There are four such parameters avaiable with corresponding default threshold values (MW 450, logP 4, RTB 5, TPSA 120) which can be changed by command line arguments 
 
 ```bash
-cremdock -i example/input.smi -o example/mode1_6.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --mw 400 --rtb 6 --logp 3 --tpsa 100
+cremdock -i example/input.smi -o example/mode1_6.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --mw 400 --rtb 6 --logp 3 --tpsa 100
 ```
 
 
@@ -135,7 +135,7 @@ The difference from the first mode is to use SDF file with 3D structure of a sta
 
 Usually for such studies it is required to specify PLIF and RMSD (`--rmsd`) value to select for further iteractions compounds which preserve contacts and position of a parent molecule.
 ```bash
-cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --n_clust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --rmsd 1
+cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --rmsd 1
 ```
 
 3. Continuation of an interrupted run
