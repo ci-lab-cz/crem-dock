@@ -298,7 +298,7 @@ def entry_point():
     logging.basicConfig(filename=args.log, encoding='utf-8', level=args.log_level * 10, datefmt='%Y-%m-%d %H:%M:%S',
                         format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
 
-    if args.algorithm in [2, 3] and (args.nclust * args.ntop > 20):
+    if args.search in [2, 3] and (args.nclust * args.ntop > 20):
         logging.warning('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
                         'will result in selection on each iteration more than 20 molecules that may slower '
                         'computations.')
@@ -333,7 +333,7 @@ def entry_point():
             res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
-                                 alg_type=args.algorithm, ranking_score_func=ranking_score(args.ranking),
+                                 alg_type=args.search, ranking_score_func=ranking_score(args.ranking),
                                  ncpu=args.ncpu, protonation=args.protonation, make_docking=make_docking,
                                  dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
