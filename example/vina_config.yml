@@ -1,0 +1,6 @@
+protein: example/2BTR_A.pdbqt
+protein_setup: example/CDK2_A_2.txt
+exhaustiveness: 8
+seed: 120
+n_poses: 1
+ncpu: 1
