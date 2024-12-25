@@ -125,7 +125,7 @@ cremdock -i example/input.smi -o example/mode1_6.db -d chembl22_sa2_hac12.db --n
 There are three major selection stratigies implemented: greedy (1), clustering (2) and Pareto (4). To enable a strategy it is necessary to pass its number to `--search` argument. There may be necessary to adjust other parameters accordingly.
 
 ```bash
-cremdock -i example/input.smi -o example/mode1_6.db -d chembl22_sa2_hac12.db --search 1 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --mw 400 --rtb 6 --logp 3 --tpsa 100
+cremdock -i example/input.smi -o example/mode1_7.db -d chembl22_sa2_hac12.db --search 1 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --mw 400 --rtb 6 --logp 3 --tpsa 100
 ```
 
 
@@ -135,7 +135,7 @@ The difference from the first mode is to use SDF file with 3D structure of a sta
 
 Usually for such studies it is required to specify PLIF and RMSD (`--rmsd`) value to select for further iteractions compounds which preserve contacts and position of a parent molecule.
 ```bash
-cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 1 --plif_protein example/2BTR_H.pdb --protonation pkasolver --rmsd 1
+cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 25 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 0.5 --plif_protein example/2BTR_H.pdb --protonation pkasolver
 ```
 
 3. Continuation of an interrupted run
