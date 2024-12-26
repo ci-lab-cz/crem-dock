@@ -19,9 +19,12 @@ This tool automates generation of molecules using [CReM](https://github.com/DrrD
 
 Install dependencies and the software
 ```
-conda install -c conda-forge python=3.9 numpy rdkit dask distributed scipy scikit-learn prolif
-pip install vina meeko easydock==0.3.2 crem
+conda install -c conda-forge python=3.9 numpy rdkit dask distributed scipy scikit-learn
+pip install prolif vina meeko easydock==0.3.2 crem
+
 pip install cremdock
+# or
+pip install git+https://github.com/DrrDom/crem-dock.git
 ```
 
 ## Generation pipeline
@@ -44,10 +47,12 @@ All molecules undergo automatic preparation for docking which should include the
 
 ### CReM fragment databases
 
-We host CReM databases created from ChEMBL22 molecules, which are available at http://qsar4u.com/pages/crem.php.  
-Details about creation of custom database is at the [CReM repository](https://github.com/DrrDom/crem).
+Precompiled CReM databases created from ChEMBL22 molecules are available at http://qsar4u.com/pages/crem.php.  
+Details about creation of custom databases is at the [CReM repository](https://github.com/DrrDom/crem).
 
 ### Modes
+
+All examples below are only illustrative and settings were chosen to quickly demonstrate particular functionality. Real use cases will require more carefully chosen parameters. All files required to reproduce these examples are available in `example` directory.    
 
 1. **Hit generation**. Generation of molecules which starts from a set of fragment supplied as SMILES or 2D SDF. In these case the supplied fragments are docked, pass PLIF/RMSD check (optional) and best candidates are used for growing on the next iteration.
 
@@ -63,7 +68,7 @@ cremdock -i example/input.smi -o example/mode1_1.db -d chembl22_sa2_hac12.db --n
 `--max_replacements` - the number of new molecules derived from the selected ones on the previous iteration, 2 was selected for the reason of speed, usually we use 2000    
 `--program` - docking program from the list of programs available in EasyDock  
 `--config` - yml-file with dockign setup, more details at the [EasyDock repository](https://github.com/ci-lab-cz/easydock)  
-`-c` - the number of molecules docked in parallel
+`-c` - the number of molecules docked in parallel (the number of cores used for docking of individual molecules are provided in `--config`)
 
 
 - protonation
@@ -75,7 +80,7 @@ cremdock -i example/input.smi -o example/mode1_2.db -d chembl22_sa2_hac12.db --n
 ```
 
 
-- identification of protein-liagnd interaction fingerprints (PLIF) for a reference ligand
+- identification of protein-ligand interaction fingerprints (PLIF) for a reference ligand
 
 PLIF can be identified invoking `cremdock_plif` script feeded with a protein and a reference ligand (both should have all hydrogens explicit). The output is a text file with detected interactions. Full names of desired contacts should be used for the subsequent `cremdock` call.  
 In this case the contacts will be `leu83.ahbdonor` and `leu83.ahbacceptor` which encode interaction with a hidge region.
@@ -91,7 +96,7 @@ cremdock -i example/input.smi -o example/mode1_3.db -d chembl22_sa2_hac12.db --n
 ```
 There are three additional arguments:  
 `--plif` - takes a list of contacts  
-`--plif_cutoff` - the minimum fraction of satisfied contact  
+`--plif_cutoff` - the minimum fraction of satisfied contact (1 means 100%, thus molecules should have all of them to have a chance to be selected for the next iteration)  
 `--plif_protein` - a protein the same as used for docking, but having all hydrogens explicit  
 
 
@@ -133,7 +138,7 @@ cremdock -i example/input.smi -o example/mode1_7.db -d chembl22_sa2_hac12.db --s
 
 The difference from the first mode is to use SDF file with 3D structure of a starting fragment (it should be properly protonated, because it will not pass through the protonation step).  
 
-Usually for such studies it is required to specify PLIF and RMSD (`--rmsd`) value to select for further iteractions compounds which preserve contacts and position of a parent molecule.
+Usually for such studies it is required to specify PLIF and RMSD (`--rmsd`) value to select for further iterations compounds which preserve both contacts and position of a parent molecule. In the example below we set to preserve at least one contact out of two and do not restrict RMSD, because with given settings we enumerate only few molecules each iteration and the chances to generate compounds satisfying PLIF and RMSD is very low. 
 ```bash
 cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 25 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 0.5 --plif_protein example/2BTR_H.pdb --protonation pkasolver
 ```
@@ -142,9 +147,20 @@ cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --n
 
 If `cremdock` running was interrupted it can be re-run using the same command and the calcultions will be automatically continued. To continue calculations it will be even enough to run `cremdock` with only a single argument `--output` pointing out on the existing database. All necessary settings will be read from the database (almost all other input arguments are ignored if an output database exists).
 
-### Notes
 
-Input SDF should not contain hydrogens or hydrogens should be listed after heavy atoms, otherwise protected ids can be broken and will not be correctly transferred to child molecules
+### Retrieval data from the database
+
+To retrieve data from an output database one can use funtionality from EasyDock. More examples are in EasyDock repository.  
+
+```bash
+get_sdf_from_dock_db -i mode1_1.db -o mode1_1.sdf --fields docking_score
+```
+
+Data can also be retrieved in SMILES format as well as any additional columns (we usually use tab as a separator).
+```bash
+sqlite3 -header -separator " " mode1_1.db "select smi, id, docking_score from mols"
+```
+
 
 ## License
 GPLv3
