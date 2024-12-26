@@ -163,7 +163,7 @@ sqlite3 -header -separator " " mode1_1.db "select smi, id, docking_score from mo
 
 
 ## License
-GPLv3
+BSD-3
 
 ## Citation
 CReM-dock: de novo design of synthetically feasible compounds guided by molecular docking  
