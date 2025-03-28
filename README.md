@@ -143,6 +143,8 @@ Usually for such studies it is required to specify PLIF and RMSD (`--rmsd`) valu
 cremdock -i example/input.sdf -o example/mode2_1.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 25 --program vina --config example/vina_config.yml -c 2 --plif leu83.ahbdonor leu83.ahbacceptor --plif_cutoff 0.5 --plif_protein example/2BTR_H.pdb --protonation pkasolver
 ```
 
+To additionally restricts generation and to point growing to a desired direction it is possible to provide a field named `protected_user_ids` in an inpit SDF file. The field should contain a comma-separated list of ids of heavy atoms (starting from 1), which should be protected from expansion. This prevents growing of molecules at the specified points on all subsequent interations. It makes sens to combine this option with the restriction by RMSD value. Thus, only molecules alighed with the parent structures will pass to the next iterations and growing direction will remain relevant. Otherwise, if a molecule will flip, the specified growing direction can become not relevant.
+
 3. Continuation of an interrupted run
 
 If `cremdock` running was interrupted it can be re-run using the same command and the calcultions will be automatically continued. To continue calculations it will be even enough to run `cremdock` with only a single argument `--output` pointing out on the existing database. All necessary settings will be read from the database (almost all other input arguments are ignored if an output database exists).
