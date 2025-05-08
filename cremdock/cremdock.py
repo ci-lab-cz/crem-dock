@@ -273,6 +273,11 @@ def entry_point():
 
     args = parser.parse_args()
 
+    if not args.log:
+        args.log = os.path.splitext(os.path.abspath(args.output))[0] + '.log'
+    logging.basicConfig(filename=args.log, encoding='utf-8', level=args.log_level * 10, datefmt='%Y-%m-%d %H:%M:%S',
+                        format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
+
     # depending on input setup operations applied on the first iteration
     # input      make_docking & make_selection
     # SMILES                              True
@@ -297,11 +302,6 @@ def entry_point():
         database.create_db(args.output, args, args_to_save=['plif_protein'])
         make_docking = database.insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
         iteration = 1
-
-    if not args.log:
-        args.log = os.path.splitext(os.path.abspath(args.output))[0] + '.log'
-    logging.basicConfig(filename=args.log, encoding='utf-8', level=args.log_level * 10, datefmt='%Y-%m-%d %H:%M:%S',
-                        format='[%(asctime)s] %(levelname)s: (PID:%(process)d) %(message)s')
 
     if args.search in [2, 3] and (args.nclust * args.ntop > 20):
         logging.warning('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
