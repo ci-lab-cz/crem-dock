@@ -238,7 +238,7 @@ def entry_point():
                              'explicit. Required for correct PLIF detection.')
 
     group5 = parser.add_argument_group('Docking parameters')
-    group5.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver'],
+    group5.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver', 'molgpka'],
                         help='choose a protonation program supported by EasyDock.')
     group5.add_argument('--program', default='vina', required=False, choices=['vina', 'gnina'],
                         help='name of a docking program.')
