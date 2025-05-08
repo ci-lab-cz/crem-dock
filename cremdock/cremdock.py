@@ -47,7 +47,7 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
         if protonation:
             logging.debug(f'iteration {iteration}, start protonation') if not final_iteration else None
             eadb.add_protonation(dbname, program=protonation, tautomerize=False,
-                                 add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+                                 add_sql=' AND iteration=(SELECT MAX(iteration) from mols)')
             logging.debug(f'iteration {iteration}, end protonation') if not final_iteration else None
         logging.debug(f'iteration {iteration}, start mols selection for docking') if not final_iteration else None
         mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
