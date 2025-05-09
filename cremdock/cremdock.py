@@ -36,7 +36,7 @@ def supply_parent_child_mols(d):
 
 
 def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
-                   alg_type, ranking_score_func, ncpu, protonation, make_docking=True, tautomerize=False,
+                   alg_type, ranking_score_func, ncpu, protonation, ring_sample, make_docking=True, tautomerize=False,
                    dask_client=None, plif_list=None, plif_protein=None, plif_cutoff=1, prefix=None,
                    final_iteration=False, **kwargs):
     logging.info(f'iteration {iteration} started') if not final_iteration else None  # supress logging on the final iteration where only docking is occurred
@@ -57,7 +57,8 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                                    dock_config=config,
                                    priority_func=priority_func,
                                    ncpu=ncpu,
-                                   dask_client=dask_client):
+                                   dask_client=dask_client,
+                                   ring_sample=ring_sample):
             if res:
                 eadb.update_db(conn, mol_id, res)
         logging.debug(f'iteration {iteration}, end docking') if not final_iteration else None
@@ -251,6 +252,9 @@ def entry_point():
                              'n_poses: 10\n'
                              'seed: -1\n'
                              'gnina.yml\n')
+    group5.add_argument('--ring_sample', action='store_true', default=False,
+                               help='sample conformations of saturated rings. Multiple starting conformers will be docked and '
+                                    'the best one will be stored. Otherwise a single random ring conformer will be used.')
     group5.add_argument('--hostfile', metavar='FILENAME', required=False, type=str, default=None,
                         help='text file with addresses of nodes of dask SSH cluster. The most typical, it can be '
                              'passed as $PBS_NODEFILE variable from inside a PBS script. The first line in this file '
@@ -339,7 +343,7 @@ def entry_point():
                                  priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
                                  mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
                                  alg_type=args.search, ranking_score_func=ranking_score(args.ranking),
-                                 ncpu=args.ncpu, protonation=args.protonation, make_docking=make_docking,
+                                 ncpu=args.ncpu, protonation=args.protonation, ring_sample=args.ring_sample, make_docking=make_docking,
                                  dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
                                  plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
                                  min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
