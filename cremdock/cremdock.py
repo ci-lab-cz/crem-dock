@@ -55,7 +55,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                                      add_sql=f' AND iteration={iteration}')
                 logging.debug(f'iteration {iteration}, end protonation')
             logging.debug(f'iteration {iteration}, start mols selection for docking')
-            mols = eadb.select_mols_to_dock(conn, add_sql=f' AND iteration={iteration} from mols)')
+            mols = eadb.select_mols_to_dock(conn, add_sql=f' AND iteration={iteration}')
             logging.debug(f'iteration {iteration}, start docking')
             for mol_id, res in docking(mols,
                                        dock_func=mol_dock_func,
