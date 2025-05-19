@@ -44,19 +44,19 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
         final_iteration = True
     else:
         final_iteration = False
-    logging.info(f'iteration {iteration} started') if not final_iteration else None  # supress logging on the final iteration where only docking is occurred
+    logging.info(f'iteration {iteration} started')  # supress logging on the final iteration where only docking is occurred
     with sqlite3.connect(dbname) as conn:
-        logging.debug(f'iteration {iteration}, make_docking={make_docking}') if not final_iteration else None
+        logging.debug(f'iteration {iteration}, make_docking={make_docking}')
         protein_xyz = get_protein_heavy_atom_xyz(dbname)
         if make_docking:
             if protonation:
-                logging.debug(f'iteration {iteration}, start protonation') if not final_iteration else None
+                logging.debug(f'iteration {iteration}, start protonation')
                 eadb.add_protonation(dbname, program=protonation, tautomerize=False,
                                      add_sql=f' AND iteration={iteration}')
-                logging.debug(f'iteration {iteration}, end protonation') if not final_iteration else None
-            logging.debug(f'iteration {iteration}, start mols selection for docking') if not final_iteration else None
+                logging.debug(f'iteration {iteration}, end protonation')
+            logging.debug(f'iteration {iteration}, start mols selection for docking')
             mols = eadb.select_mols_to_dock(conn, add_sql=f' AND iteration={iteration} from mols)')
-            logging.debug(f'iteration {iteration}, start docking') if not final_iteration else None
+            logging.debug(f'iteration {iteration}, start docking')
             for mol_id, res in docking(mols,
                                        dock_func=mol_dock_func,
                                        dock_config=config,
@@ -66,9 +66,9 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                                        ring_sample=ring_sample):
                 if res:
                     eadb.update_db(conn, mol_id, res)
-            logging.debug(f'iteration {iteration}, end docking') if not final_iteration else None
+            logging.debug(f'iteration {iteration}, end docking')
             database.update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
-            logging.debug(f'iteration {iteration}, DB was updated (including rmsd and plif if set)') if not final_iteration else None
+            logging.debug(f'iteration {iteration}, DB was updated (including rmsd and plif if set)')
 
             res = dict()
             mol_data = database.get_docked_mol_data(conn, iteration)
