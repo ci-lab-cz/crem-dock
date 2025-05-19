@@ -78,7 +78,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                 return iteration, False
 
             rmsd_plif_flag = False
-            if iteration != 1 and rmsd is not None:
+            if iteration != 0 and rmsd is not None:
                 mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
                 rmsd_plif_flag = True
             if plif_list and len(mol_data.index) > 0:
@@ -137,7 +137,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
             data = []
             p = Pool(ncpu)
             try:
-                for d in p.starmap(partial(database.prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw,
+                for d in p.starmap(partial(database.prep_data_for_insert, iteration=iteration + 1, max_rtb=rtb, max_mw=mw,
                                            max_logp=logp, max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res)):
                     data.extend(d)
             finally:
