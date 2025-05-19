@@ -220,7 +220,7 @@ def get_docked_mol_data(conn, iteration):
     cur = conn.cursor()
     res = tuple(cur.execute(f"SELECT id, rmsd, plif_sim "
                             f"FROM mols "
-                            f"WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL"))
+                            f"WHERE iteration = '{iteration}' AND mol_block IS NOT NULL"))
     df = pd.DataFrame(res, columns=['id', 'rmsd', 'plif_sim']).set_index('id')
     return df
 
@@ -233,7 +233,7 @@ def get_docked_mol_ids(conn, iteration):
     :return:
     """
     cur = conn.cursor()
-    res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration - 1}' AND mol_block IS NOT NULL")  # TODO: use docking_score instead of mol_block
+    res = cur.execute(f"SELECT id FROM mols WHERE iteration = '{iteration}' AND mol_block IS NOT NULL")  # TODO: use docking_score instead of mol_block
     return [i[0] for i in res]
 
 

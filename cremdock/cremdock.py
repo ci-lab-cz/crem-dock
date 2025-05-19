@@ -35,10 +35,15 @@ def supply_parent_child_mols(d):
             n += 1
 
 
-def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
+def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_score_func, ncpu, protonation, ring_sample, make_docking=True, tautomerize=False,
                    dask_client=None, plif_list=None, plif_protein=None, plif_cutoff=1, prefix=None,
-                   final_iteration=False, **kwargs):
+                   n_iterations=None, **kwargs):
+    iteration = database.get_last_iter_from_db(dbname)
+    if n_iterations and n_iterations == iteration:
+        final_iteration = True
+    else:
+        final_iteration = False
     logging.info(f'iteration {iteration} started') if not final_iteration else None  # supress logging on the final iteration where only docking is occurred
     with sqlite3.connect(dbname) as conn:
         logging.debug(f'iteration {iteration}, make_docking={make_docking}') if not final_iteration else None
@@ -47,10 +52,10 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             if protonation:
                 logging.debug(f'iteration {iteration}, start protonation') if not final_iteration else None
                 eadb.add_protonation(dbname, program=protonation, tautomerize=False,
-                                     add_sql=' AND iteration=(SELECT MAX(iteration) from mols)')
+                                     add_sql=f' AND iteration={iteration}')
                 logging.debug(f'iteration {iteration}, end protonation') if not final_iteration else None
             logging.debug(f'iteration {iteration}, start mols selection for docking') if not final_iteration else None
-            mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+            mols = eadb.select_mols_to_dock(conn, add_sql=f' AND iteration={iteration} from mols)')
             logging.debug(f'iteration {iteration}, start docking') if not final_iteration else None
             for mol_id, res in docking(mols,
                                        dock_func=mol_dock_func,
@@ -67,10 +72,10 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
 
             res = dict()
             mol_data = database.get_docked_mol_data(conn, iteration)
-            logging.info(f'iteration {iteration if not final_iteration else iteration - 1}, docked mols count: {mol_data.shape[0]}')
+            logging.info(f'iteration {iteration}, docked mols count: {mol_data.shape[0]}')
 
             if final_iteration:  # make only docking
-                return False
+                return iteration, False
 
             rmsd_plif_flag = False
             if iteration != 1 and rmsd is not None:
@@ -143,13 +148,13 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
             logging.info(f'iteration {iteration}, {inserted_row_count} new mols were inserted in DB after filtering by '
                          f'physicochemical properties')
             if data:
-                return True
+                return iteration, True
             else:
-                return False  # if data is empty
+                return iteration, False  # if data is empty
 
         else:
             logging.info(f'iteration {iteration}, growth was stopped')
-            return False
+            return iteration, False
 
 
 def entry_point():
@@ -299,15 +304,11 @@ def entry_point():
         for arg in supplied_args:
             del args_dict[arg]
         args.__dict__.update(args_dict)
-        iteration = database.get_last_iter_from_db(args.output)
-        if iteration is None:
-            raise IOError("The last iteration could not be retrieved from the database. Please check it.")
         make_docking = True
 
     else:
         database.create_db(args.output, args, args_to_save=['plif_protein'])
         make_docking = database.insert_starting_structures_to_db(args.input_frags, args.output, args.prefix)
-        iteration = 1
 
     if args.search in [2, 3] and (args.nclust * args.ntop > 20):
         logging.warning('The number of clusters (nclust) and top scored molecules selected from each cluster (ntop) '
@@ -340,33 +341,29 @@ def entry_point():
     filter_func = filter_functions[args.filter_func] if args.filter_func else None
 
     try:
+        final_iteration = False
         while True:
-            res = make_iteration(dbname=args.output, iteration=iteration, config=args.config, mol_dock_func=mol_dock,
-                                 priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
-                                 mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
-                                 alg_type=args.search, ranking_score_func=ranking_score(args.ranking),
-                                 ncpu=args.ncpu, protonation=args.protonation, ring_sample=args.ring_sample, make_docking=make_docking,
-                                 dask_client=dask_client, plif_list=args.plif, plif_protein=args.plif_protein,
-                                 plif_cutoff=args.plif_cutoff, prefix=args.prefix, db_name=args.db, radius=args.radius,
-                                 min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
-                                 max_replacements=args.max_replacements, sample_func=sample_func,
-                                 filter_func=filter_func, tautomerize=args.tautomerize,
-                                 final_iteration=args.n_iterations is not None and iteration == args.n_iterations + 1)
+            iteration, res = make_iteration(dbname=args.output, config=args.config, mol_dock_func=mol_dock,
+                                            priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
+                                            mw=args.mw, rmsd=args.rmsd, rtb=args.rtb, logp=args.logp, tpsa=args.tpsa,
+                                            alg_type=args.search, ranking_score_func=ranking_score(args.ranking),
+                                            ncpu=args.ncpu, protonation=args.protonation, ring_sample=args.ring_sample,
+                                            make_docking=make_docking, dask_client=dask_client, plif_list=args.plif,
+                                            plif_protein=args.plif_protein, plif_cutoff=args.plif_cutoff,
+                                            prefix=args.prefix, db_name=args.db, radius=args.radius,
+                                            min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
+                                            max_replacements=args.max_replacements, sample_func=sample_func,
+                                            filter_func=filter_func, tautomerize=args.tautomerize,
+                                            n_iterations=args.n_iterations)
             make_docking = True
 
-            if res:
-                if args.n_iterations and iteration == args.n_iterations + 1:  # +1 to allow docking of compounds created on the last iteration
-                    break
-                iteration += 1
-            else:
+            if not res:
                 break
 
     except Exception as e:
         logging.exception(e, stack_info=True)
 
     finally:
-        if args.n_iterations and iteration == args.n_iterations + 1:
-            iteration = args.n_iterations
         logging.info(f'{iteration} iterations were completed')
 
 
