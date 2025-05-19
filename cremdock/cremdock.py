@@ -40,114 +40,116 @@ def make_iteration(dbname, iteration, config, mol_dock_func, priority_func, ntop
                    dask_client=None, plif_list=None, plif_protein=None, plif_cutoff=1, prefix=None,
                    final_iteration=False, **kwargs):
     logging.info(f'iteration {iteration} started') if not final_iteration else None  # supress logging on the final iteration where only docking is occurred
-    conn = sqlite3.connect(dbname)
-    logging.debug(f'iteration {iteration}, make_docking={make_docking}') if not final_iteration else None
-    protein_xyz = get_protein_heavy_atom_xyz(dbname)
-    if make_docking:
-        if protonation:
-            logging.debug(f'iteration {iteration}, start protonation') if not final_iteration else None
-            eadb.add_protonation(dbname, program=protonation, tautomerize=False,
-                                 add_sql=' AND iteration=(SELECT MAX(iteration) from mols)')
-            logging.debug(f'iteration {iteration}, end protonation') if not final_iteration else None
-        logging.debug(f'iteration {iteration}, start mols selection for docking') if not final_iteration else None
-        mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
-        logging.debug(f'iteration {iteration}, start docking') if not final_iteration else None
-        for mol_id, res in docking(mols,
-                                   dock_func=mol_dock_func,
-                                   dock_config=config,
-                                   priority_func=priority_func,
-                                   ncpu=ncpu,
-                                   dask_client=dask_client,
-                                   ring_sample=ring_sample):
-            if res:
-                eadb.update_db(conn, mol_id, res)
-        logging.debug(f'iteration {iteration}, end docking') if not final_iteration else None
-        database.update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
-        logging.debug(f'iteration {iteration}, DB was updated (including rmsd and plif if set)') if not final_iteration else None
+    with sqlite3.connect(dbname) as conn:
+        logging.debug(f'iteration {iteration}, make_docking={make_docking}') if not final_iteration else None
+        protein_xyz = get_protein_heavy_atom_xyz(dbname)
+        if make_docking:
+            if protonation:
+                logging.debug(f'iteration {iteration}, start protonation') if not final_iteration else None
+                eadb.add_protonation(dbname, program=protonation, tautomerize=False,
+                                     add_sql=' AND iteration=(SELECT MAX(iteration) from mols)')
+                logging.debug(f'iteration {iteration}, end protonation') if not final_iteration else None
+            logging.debug(f'iteration {iteration}, start mols selection for docking') if not final_iteration else None
+            mols = eadb.select_mols_to_dock(conn, add_sql='AND iteration=(SELECT MAX(iteration) from mols)')
+            logging.debug(f'iteration {iteration}, start docking') if not final_iteration else None
+            for mol_id, res in docking(mols,
+                                       dock_func=mol_dock_func,
+                                       dock_config=config,
+                                       priority_func=priority_func,
+                                       ncpu=ncpu,
+                                       dask_client=dask_client,
+                                       ring_sample=ring_sample):
+                if res:
+                    eadb.update_db(conn, mol_id, res)
+            logging.debug(f'iteration {iteration}, end docking') if not final_iteration else None
+            database.update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
+            logging.debug(f'iteration {iteration}, DB was updated (including rmsd and plif if set)') if not final_iteration else None
 
-        res = dict()
-        mol_data = database.get_docked_mol_data(conn, iteration)
-        logging.info(f'iteration {iteration if not final_iteration else iteration -1}, docked mols count: {mol_data.shape[0]}')
+            res = dict()
+            mol_data = database.get_docked_mol_data(conn, iteration)
+            logging.info(f'iteration {iteration if not final_iteration else iteration - 1}, docked mols count: {mol_data.shape[0]}')
 
-        if final_iteration:  # make only docking
-            return False
+            if final_iteration:  # make only docking
+                return False
 
-        rmsd_plif_flag = False
-        if iteration != 1 and rmsd is not None:
-            mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
-            rmsd_plif_flag = True
-        if plif_list and len(mol_data.index) > 0:
-            mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
-            rmsd_plif_flag = True
-        if rmsd_plif_flag:
-            logging.info(f'iteration {iteration}, docked mols count after rmsd/plif filters: {mol_data.shape[0]}')
+            rmsd_plif_flag = False
+            if iteration != 1 and rmsd is not None:
+                mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
+                rmsd_plif_flag = True
+            if plif_list and len(mol_data.index) > 0:
+                mol_data = mol_data.loc[mol_data['plif_sim'] >= plif_cutoff]  # filter by PLIF
+                rmsd_plif_flag = True
+            if rmsd_plif_flag:
+                logging.info(f'iteration {iteration}, docked mols count after rmsd/plif filters: {mol_data.shape[0]}')
 
-        if len(mol_data.index) == 0:
-            logging.info(f'iteration {iteration}, no molecules were selected for growing')
-        else:
-            logging.debug(f'iteration {iteration}, start selection and growing')
-            mols = database.get_mols(conn, mol_data.index)
-            if alg_type == 1:
-                res = selection_and_grow_greedy(mols=mols, conn=conn, protein_xyz=protein_xyz,
-                                                ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                                ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-            elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
-                res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp,
-                                     max_tpsa=tpsa, ncpu=ncpu, **kwargs)
-            elif alg_type == 2:
-                res = selection_and_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
+            if len(mol_data.index) == 0:
+                logging.info(f'iteration {iteration}, no molecules were selected for growing')
+            else:
+                logging.debug(f'iteration {iteration}, start selection and growing')
+                mols = database.get_mols(conn, mol_data.index)
+                if alg_type == 1:
+                    res = selection_and_grow_greedy(mols=mols, conn=conn, protein_xyz=protein_xyz,
                                                     ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                     ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-            elif alg_type == 3:
-                res = selection_and_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
-                                               ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                               ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-            elif alg_type == 4:
-                res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp,
-                                                max_tpsa=tpsa, protein_xyz=protein_xyz,
-                                                ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-            logging.debug(f'iteration {iteration}, end selection and growing')
+                elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
+                    res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp,
+                                         max_tpsa=tpsa, ncpu=ncpu, **kwargs)
+                elif alg_type == 2:
+                    res = selection_and_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
+                                                        ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                                        ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                elif alg_type == 3:
+                    res = selection_and_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
+                                                   ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                                   ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                elif alg_type == 4:
+                    res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp,
+                                                    max_tpsa=tpsa, protein_xyz=protein_xyz,
+                                                    ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                logging.debug(f'iteration {iteration}, end selection and growing')
 
-    else:
-        logging.debug(f'iteration {iteration}, docking was omitted, all mols are grown')
-        mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
-        res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                             ncpu=ncpu, **kwargs)
-        logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
-
-    logging.info(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values())}')
-
-    if res:
-        res = user_protected_atoms.assign_protected_ids(res)
-        logging.debug(f'iteration {iteration}, end assign_protected_ids')
-        res = user_protected_atoms.set_isotope_to_parent_protected_atoms(res)
-        logging.debug(f'iteration {iteration}, end set_isotope_to_parent_protected_atoms')
-        if tautomerize:
-            res = get_major_tautomer(res)
-            logging.debug(f'iteration {iteration}, end get_major_tautomer')
-        res = user_protected_atoms.assign_protected_ids_from_isotope(res)
-        logging.debug(f'iteration {iteration}, end assign_protected_ids_from_isotope')
-        data = []
-        p = Pool(ncpu)
-        try:
-            for d in p.starmap(partial(database.prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw,
-                                       max_logp=logp, max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res)):
-                data.extend(d)
-        finally:
-            p.close()
-            p.join()
-        cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
-        eadb.insert_db(dbname, data=data, cols=cols)
-        logging.info(f'iteration {iteration}, {len(data)} new mols were inserted in DB after filtering by '
-                     f'physicochemical properties')
-        if data:
-            return True
         else:
-            return False  # if data is empty
+            logging.debug(f'iteration {iteration}, docking was omitted, all mols are grown')
+            mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
+            res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
+                                 ncpu=ncpu, **kwargs)
+            logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
 
-    else:
-        logging.info(f'iteration {iteration}, growth was stopped')
-        return False
+        logging.info(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values())}')
+
+        if res:
+            # res may containg duplicated molecules between different parent molecules
+            # they will be discarded dirung insert
+            res = user_protected_atoms.assign_protected_ids(res)
+            logging.debug(f'iteration {iteration}, end assign_protected_ids')
+            res = user_protected_atoms.set_isotope_to_parent_protected_atoms(res)
+            logging.debug(f'iteration {iteration}, end set_isotope_to_parent_protected_atoms')
+            if tautomerize:
+                res = get_major_tautomer(res)
+                logging.debug(f'iteration {iteration}, end get_major_tautomer')
+            res = user_protected_atoms.assign_protected_ids_from_isotope(res)
+            logging.debug(f'iteration {iteration}, end assign_protected_ids_from_isotope')
+            data = []
+            p = Pool(ncpu)
+            try:
+                for d in p.starmap(partial(database.prep_data_for_insert, iteration=iteration, max_rtb=rtb, max_mw=mw,
+                                           max_logp=logp, max_tpsa=tpsa, prefix=prefix), supply_parent_child_mols(res)):
+                    data.extend(d)
+            finally:
+                p.close()
+                p.join()
+            cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
+            inserted_row_count = eadb.insert_db(dbname, data=data, cols=cols)
+            logging.info(f'iteration {iteration}, {inserted_row_count} new mols were inserted in DB after filtering by '
+                         f'physicochemical properties')
+            if data:
+                return True
+            else:
+                return False  # if data is empty
+
+        else:
+            logging.info(f'iteration {iteration}, growth was stopped')
+            return False
 
 
 def entry_point():
