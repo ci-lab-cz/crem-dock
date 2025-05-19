@@ -59,7 +59,7 @@ def filter_by_plif(mols, plif_ref, protein_fname, threshold=1):
     return mols
 
 
-def plif_similarity(mol, plif_protein_fname, plif_ref_df):
+def plif_similarity(mol, plif_protein_fname, plif_ref_df, ncpu=1):
     """
     Calculate Tversky similarity between reference plif and plif of molecules. For Tversky index alpha was set 1 and
     beta to 0. This means that all bits not present in the reference plif will be ignored.
@@ -68,15 +68,13 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df):
     :param mol: RDKit Mol
     :param plif_protein_fname: PDB file with a protein containing all hydrogens
     :param plif_ref_df: pandas.DataFrame of reference interactions (with a single row simplified header, dot-separated)
+    :param ncpu: number of cpus to use
     :return:
     """
     plf_prot = plf.Molecule(Chem.MolFromPDBFile(plif_protein_fname, removeHs=False, sanitize=False))
     fp = plf.Fingerprint(['Hydrophobic', 'HBDonor', 'HBAcceptor', 'Anionic', 'Cationic', 'CationPi', 'PiCation',
                           'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
-    try:
-        fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot)   # danger, hope it will always keep the order of molecules
-    except AssertionError:  # catch multiprocessing conflict with new version of prolif
-        fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot, n_jobs=1)  # danger, hope it will always keep the order of molecules
+    fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot, n_jobs=ncpu)
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     df = pd.concat([plif_ref_df, df]).fillna(False)
