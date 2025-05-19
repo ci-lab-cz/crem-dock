@@ -67,7 +67,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                 if res:
                     eadb.update_db(conn, mol_id, res)
             logging.debug(f'iteration {iteration}, end docking')
-            database.update_db(conn, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
+            database.update_db(conn, iteration, plif_ref=plif_list, plif_protein_fname=plif_protein, ncpu=ncpu)
             logging.debug(f'iteration {iteration}, DB was updated (including rmsd and plif if set)')
 
             res = dict()
@@ -78,7 +78,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                 return iteration, False
 
             rmsd_plif_flag = False
-            if iteration != 0 and rmsd is not None:
+            if iteration > 0 and rmsd is not None:
                 mol_data = mol_data.loc[mol_data['rmsd'] <= rmsd]  # filter by RMSD
                 rmsd_plif_flag = True
             if plif_list and len(mol_data.index) > 0:

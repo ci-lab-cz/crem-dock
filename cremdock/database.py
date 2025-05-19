@@ -105,7 +105,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
     return make_docking
 
 
-def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
+def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
     """
     Post-process all docked molecules from an individual iteration.
     Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
@@ -116,7 +116,6 @@ def update_db(conn, plif_ref=None, plif_protein_fname=None, ncpu=1):
     :return:
     """
     cur = conn.cursor()
-    iteration = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0] + 1
     mol_ids = get_docked_mol_ids(conn, iteration)
     mols = get_mols(conn, mol_ids)
     # parent_ids and parent_mols can be empty if all compounds do not have parents
