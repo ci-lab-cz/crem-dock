@@ -45,7 +45,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
     else:
         final_iteration = False
     logging.info(f'iteration {iteration} started')  # supress logging on the final iteration where only docking is occurred
-    with sqlite3.connect(dbname) as conn:
+    with sqlite3.connect(dbname, timeout=90) as conn:
         logging.debug(f'iteration {iteration}, make_docking={make_docking}')
         protein_xyz = get_protein_heavy_atom_xyz(dbname)
         if make_docking:

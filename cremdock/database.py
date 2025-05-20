@@ -29,21 +29,20 @@ def create_db(fname, args, args_to_save):
     """
     eadb.create_db(fname, args, args_to_save, ('protein', 'protein_setup'), unique_smi=True)
     eadb.populate_setup_db(fname, args, args_to_save, ('protein', 'protein_setup'))
-    conn = sqlite3.connect(fname)
-    cur = conn.cursor()
-    # cur.execute("PRAGMA journal_mode=WAL")
-    cur.execute("ALTER TABLE mols ADD iteration INTEGER")
-    cur.execute("ALTER TABLE mols ADD parent_id TEXT")
-    cur.execute("ALTER TABLE mols ADD mw REAL")
-    cur.execute("ALTER TABLE mols ADD rtb INTEGER")
-    cur.execute("ALTER TABLE mols ADD logp REAL")
-    cur.execute("ALTER TABLE mols ADD tpsa REAL")
-    cur.execute("ALTER TABLE mols ADD qed REAL")
-    cur.execute("ALTER TABLE mols ADD rmsd REAL")
-    cur.execute("ALTER TABLE mols ADD plif_sim REAL")
-    cur.execute("ALTER TABLE mols ADD protected_user_canon_ids TEXT DEFAULT NULL")
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(fname, timeout=90) as conn:
+        cur = conn.cursor()
+        # cur.execute("PRAGMA journal_mode=WAL")
+        cur.execute("ALTER TABLE mols ADD iteration INTEGER")
+        cur.execute("ALTER TABLE mols ADD parent_id TEXT")
+        cur.execute("ALTER TABLE mols ADD mw REAL")
+        cur.execute("ALTER TABLE mols ADD rtb INTEGER")
+        cur.execute("ALTER TABLE mols ADD logp REAL")
+        cur.execute("ALTER TABLE mols ADD tpsa REAL")
+        cur.execute("ALTER TABLE mols ADD qed REAL")
+        cur.execute("ALTER TABLE mols ADD rmsd REAL")
+        cur.execute("ALTER TABLE mols ADD plif_sim REAL")
+        cur.execute("ALTER TABLE mols ADD protected_user_canon_ids TEXT DEFAULT NULL")
+        conn.commit()
 
 
 def insert_starting_structures_to_db(fname, db_fname, prefix):
@@ -120,8 +119,8 @@ def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
     mols = get_mols(conn, mol_ids)
     # parent_ids and parent_mols can be empty if all compounds do not have parents
     parent_ids = dict(eadb.select_from_db(cur,
-                                     "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
-                                     mol_ids))
+                                          "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
+                                          mol_ids))
     uniq_parent_ids = list(set(parent_ids.values()))
     parent_mols = get_mols(conn, uniq_parent_ids)
     parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
@@ -291,26 +290,26 @@ def get_last_iter_from_db(db_fname):
     :param db_fname:
     :return: iteration number
     """
-    with sqlite3.connect(db_fname) as conn:
+    with sqlite3.connect(db_fname, timeout=90) as conn:
         cur = conn.cursor()
         res = list(cur.execute("SELECT max(iteration) FROM mols"))[0][0]
         return res
 
 
 def check_any_molblock_isnull(dbname):
-    conn = sqlite3.connect(dbname)
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM mols WHERE mol_block IS NULL")
-    result = cur.fetchone()[0]
-    if result == 0:
-        return False
-    else:
-        return True
+    with sqlite3.connect(dbname, timeout=90) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM mols WHERE mol_block IS NULL")
+        result = cur.fetchone()[0]
+        if result == 0:
+            return False
+        else:
+            return True
 
 
 def get_protein_heavy_atom_xyz(dbname):
-    conn = sqlite3.connect(dbname)
-    cur = conn.cursor()
-    cur.execute("SELECT protein FROM setup")
-    pdb_block = cur.fetchone()[0]
-    return get_protein_heavy_atoms_xyz_from_string(pdb_block)
+    with sqlite3.connect(dbname, timeout=90) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT protein FROM setup")
+        pdb_block = cur.fetchone()[0]
+        return get_protein_heavy_atoms_xyz_from_string(pdb_block)
