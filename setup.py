@@ -14,7 +14,7 @@ setuptools.setup(
     description="CReM-dock: molecule generation and decoration guided by molecular docking",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/DrrDom/cremdock",
+    url="https://github.com/ci-lab-cz/crem-dock",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
@@ -26,8 +26,8 @@ setuptools.setup(
     python_requires='>=3.9',
     extras_require={
         'rdkit': ['rdkit>=2017.09'],
-        'crem': ['crem>=0.2.7'],
-        'easydock': ['easydock>=0.3.1'],
+        'crem': ['crem>=0.2.14'],
+        'easydock': ['easydock>=1.0'],
     },
     entry_points={'console_scripts':
                       ['cremdock = cremdock.cremdock:entry_point',

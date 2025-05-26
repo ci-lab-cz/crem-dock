@@ -17,13 +17,15 @@ This tool automates generation of molecules using [CReM](https://github.com/DrrD
 
 ## Installation
 
-Install dependencies and the software
+Install dependencies and the software:
+
+1. Install a conda environment with [easydock](https://github.com/ci-lab-cz/easydock) (minimal version 1.0)
+2. On top install further dependencies and crem-dock
 ```
-conda install -c conda-forge python=3.9 numpy rdkit dask distributed scipy scikit-learn
-pip install prolif vina meeko easydock==0.3.2 crem
+pip install prolif crem
 
 pip install cremdock
-# or
+# or the latest version from the repository
 pip install git+https://github.com/DrrDom/crem-dock.git
 ```
 
@@ -73,10 +75,10 @@ cremdock -i example/input.smi -o example/mode1_1.db -d chembl22_sa2_hac12.db --n
 
 - protonation
 
-It is recommended to protonate compounds before docking. This can be achieved by using the argument `--protonation` and specify the protonation model. 
+It is recommended to protonate compounds before docking. This can be achieved by using the argument `--protonation` and specify the protonation model. These options come from `easydock`.
 
 ```bash
-cremdock -i example/input.smi -o example/mode1_2.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --protonation pkasolver
+cremdock -i example/input.smi -o example/mode1_2.db -d chembl22_sa2_hac12.db --nclust 2 --max_replacements 2 --program vina --config example/vina_config.yml -c 2 --protonation molgpka
 ```
 
 
