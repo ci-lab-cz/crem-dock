@@ -87,7 +87,7 @@ cremdock -i example/input.smi -o example/mode1_2.db -d chembl22_sa2_hac12.db --n
 PLIF can be identified invoking `cremdock_plif` script feeded with a protein and a reference ligand (both should have all hydrogens explicit). The output is a text file with detected interactions. Full names of desired contacts should be used for the subsequent `cremdock` call.  
 In this case the contacts will be `leu83.ahbdonor` and `leu83.ahbacceptor` which encode interaction with a hidge region.
 ```bash
-cremdock_plif -i example/2BTR_H.pdb -l example/2BTR_lig.sdf -o example/2BTR_lig.plif 
+cremdock_plif -p example/2BTR_H.pdb -l example/2BTR_lig.sdf -o example/2BTR_lig.plif 
 ```
 Running this script is not necessary, a user may select contacts manually, however, names of contacts should follow the same conventions/format (otherwise no matches will be found).
 
