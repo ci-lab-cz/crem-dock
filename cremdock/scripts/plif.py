@@ -83,22 +83,20 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df, ncpu=1):
     return mol.GetProp('_Name'), round(sim, 3)
 
 
-def calc_plif(mols, protein_fname, sanitize_protein):
+def calc_plif(mols, protein_fname, sanitize_protein, ncpu=1):
     """
     Calculate PLIF for multiple molecules in input SDF file.
     :param mols: list of RDKit mols (ligands)
     :param protein_fname: protein PDB
     :param sanitize_protein: (bool) whether or not sanitize protein structure
+    :param ncpu: number of cpus to use
     :return: pandas DataFrame with
     """
     mol_names = [mol.GetProp('_Name') for mol in mols]
     plf_prot = plf.Molecule(Chem.MolFromPDBFile(protein_fname, removeHs=False, sanitize=sanitize_protein))
     fp = plf.Fingerprint(['Hydrophobic', 'HBDonor', 'HBAcceptor', 'Anionic', 'Cationic', 'CationPi', 'PiCation',
                           'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
-    try:
-        fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot)   # danger, hope it will always keep the order of molecules
-    except AssertionError:  # catch multiprocessing conflict with new version of prolif
-        fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot, n_jobs=1)  # danger, hope it will always keep the order of molecules
+    fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot, n_jobs=ncpu)  # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     df.index = mol_names
