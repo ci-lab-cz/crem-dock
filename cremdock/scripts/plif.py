@@ -6,8 +6,7 @@ from functools import partial
 from itertools import islice
 from multiprocessing import Pool
 from rdkit import Chem, DataStructs
-from cremdock.scripts.arg_types import filepath_type, cpu_type
-
+from cremdock.scripts.arg_types import filepath_type, cpu_type, str_lower_type
 
 def take(n, iterable):
     """
@@ -83,7 +82,7 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df, ncpu=1):
     return mol.GetProp('_Name'), round(sim, 3)
 
 
-def calc_plif(mols, protein_fname, sanitize_protein, ncpu=1):
+def calc_plif(mols, protein_fname, sanitize_protein, plif_ref_df=None, ncpu=1):
     """
     Calculate PLIF for multiple molecules in input SDF file.
     :param mols: list of RDKit mols (ligands)
@@ -99,11 +98,17 @@ def calc_plif(mols, protein_fname, sanitize_protein, ncpu=1):
     fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot, n_jobs=ncpu)  # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
+    if plif_ref_df is not None:
+        df = pd.concat([plif_ref_df, df]).fillna(False)
+        b = plf.to_bitvectors(df)
+        sim = DataStructs.BulkTverskySimilarity(b[0], b[1:], 1, 0)
+        sim = [round(x, 3) for x in sim]
+        df = pd.DataFrame(sim, columns=['plif_sim'])
     df.index = mol_names
     return df
 
 
-def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, ncpu=1):
+def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, plif_list=None, ncpu=1):
     p = Pool(ncpu)
     try:
         mols = []
@@ -114,9 +119,16 @@ def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, ncpu=1):
             if mol:
                 mols = [mol]
         chunks = chunk(mols, ncpu)
-        df = list(p.imap(partial(calc_plif, protein_fname=protein_fname, sanitize_protein=sanitize_protein), chunks))
+
+        if plif_list is not None:
+            plif_ref_df = pd.DataFrame(data={item: True for item in plif_list}, index=['reference'])
+        else:
+            plif_ref_df = None
+
+        df = list(p.imap(partial(calc_plif, protein_fname=protein_fname, sanitize_protein=sanitize_protein, plif_ref_df=plif_ref_df), chunks))
         df = pd.concat(df).fillna(False)
-        df = df.reindex(sorted(df.columns), axis=1)
+        if plif_list is None:
+            df = df.reindex(sorted(df.columns), axis=1)
     finally:
         p.close()
         p.join()
@@ -130,6 +142,12 @@ def entry_point():
                         help='PDB file of a protein.')
     parser.add_argument('-l', '--ligands', metavar='FILENAME', required=True, type=filepath_type,
                         help='SDF file of ligands.')
+    parser.add_argument('--ref_plif', metavar='STRING', default=None, required=False, nargs='*',
+                        type=str_lower_type,
+                        help='list of desired protein-ligand interactions compatible with ProLIF. Derive '
+                             'these names from a reference ligand. Example: glu80.ahbdonor leu82.ahbacceptor. '
+                             'If this argument is specified, the script returns metrics corresponding '
+                             'to the proportion of required contacts from the desired ones.')
     parser.add_argument('-x', '--no_protein_sanitization', action='store_true', default=False,
                         help='sanitize input protein molecule.')
     parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
@@ -142,6 +160,7 @@ def entry_point():
     args = parser.parse_args()
     df = calc_plif_mp(protein_fname=args.protein,
                       ligand_fname=args.ligands,
+                      plif_list=args.ref_plif,
                       sanitize_protein=not args.no_protein_sanitization,
                       ncpu=args.ncpu)
     df.to_csv(args.output, sep='\t')
