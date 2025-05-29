@@ -142,11 +142,12 @@ def entry_point():
                         help='PDB file of a protein.')
     parser.add_argument('-l', '--ligands', metavar='FILENAME', required=True, type=filepath_type,
                         help='SDF file of ligands.')
-    parser.add_argument('--plif', metavar='STRING', default=None, required=False, nargs='*',
+    parser.add_argument('--ref_plif', metavar='STRING', default=None, required=False, nargs='*',
                         type=str_lower_type,
-                        help='list of protein-ligand interactions compatible with ProLIF. Dot-separated names of each '
-                             'interaction which should be observed for a ligand to pass to the next iteration. Derive '
-                             'these names from a reference ligand. Example: ASP115.HBDonor or ARG34.A.Hydrophobic.')
+                        help='list desired of protein-ligand interactions compatible with ProLIF. Derive '
+                             'these names from a reference ligand. Example: glu80.ahbdonor leu82.ahbacceptor. '
+                             'If this argument is specified, the script returns metrics corresponding '
+                             'to the proportion of required contacts from the desired ones.')
     parser.add_argument('-x', '--no_protein_sanitization', action='store_true', default=False,
                         help='sanitize input protein molecule.')
     parser.add_argument('-o', '--output', metavar='FILENAME', required=True, type=filepath_type,
@@ -159,7 +160,7 @@ def entry_point():
     args = parser.parse_args()
     df = calc_plif_mp(protein_fname=args.protein,
                       ligand_fname=args.ligands,
-                      plif_list=args.plif,
+                      plif_list=args.ref_plif,
                       sanitize_protein=not args.no_protein_sanitization,
                       ncpu=args.ncpu)
     df.to_csv(args.output, sep='\t')
