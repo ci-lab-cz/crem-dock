@@ -144,7 +144,7 @@ def entry_point():
                         help='SDF file of ligands.')
     parser.add_argument('--ref_plif', metavar='STRING', default=None, required=False, nargs='*',
                         type=str_lower_type,
-                        help='list desired of protein-ligand interactions compatible with ProLIF. Derive '
+                        help='list of desired protein-ligand interactions compatible with ProLIF. Derive '
                              'these names from a reference ligand. Example: glu80.ahbdonor leu82.ahbacceptor. '
                              'If this argument is specified, the script returns metrics corresponding '
                              'to the proportion of required contacts from the desired ones.')
