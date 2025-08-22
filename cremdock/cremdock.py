@@ -147,10 +147,10 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
             inserted_row_count = eadb.insert_db(dbname, data=data, cols=cols)
             logging.info(f'iteration {iteration}, {inserted_row_count} new mols were inserted in DB after filtering by '
                          f'physicochemical properties')
-            if data:
+            if inserted_row_count > 0:
                 return iteration, True
             else:
-                return iteration, False  # if data is empty
+                return iteration, False  # no molecules were inserted
 
         else:
             logging.info(f'iteration {iteration}, growth was stopped')
