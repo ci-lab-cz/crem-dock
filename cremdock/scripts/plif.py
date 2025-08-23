@@ -51,7 +51,8 @@ def filter_by_plif(mols, plif_ref, protein_fname, threshold=1):
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     df.index = [mol.GetProp('_Name') for mol in mols]
     ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
-    df = pd.concat([ref_df, df]).fillna(False)
+    with pd.option_context("future.no_silent_downcasting", True):
+        df = pd.concat([ref_df, df]).fillna(False).astype(bool)
     b = plf.to_bitvectors(df)
     res = DataStructs.BulkTverskySimilarity(b[0], b[1:], 1, 0)
     mols = [mol for mol, v in zip(mols, res) if v >= threshold]
@@ -76,7 +77,8 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df, ncpu=1):
     fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot, n_jobs=ncpu)
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
-    df = pd.concat([plif_ref_df, df]).fillna(False)
+    with pd.option_context("future.no_silent_downcasting", True):
+        df = pd.concat([plif_ref_df, df]).fillna(False).astype(bool)
     b = plf.to_bitvectors(df)
     sim = DataStructs.TverskySimilarity(b[0], b[1], 1, 0)
     return mol.GetProp('_Name'), round(sim, 3)
@@ -99,7 +101,8 @@ def calc_plif(mols, protein_fname, sanitize_protein, plif_ref_df=None, ncpu=1):
     df = fp.to_dataframe()
     df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     if plif_ref_df is not None:
-        df = pd.concat([plif_ref_df, df]).fillna(False)
+        with pd.option_context("future.no_silent_downcasting", True):
+            df = pd.concat([plif_ref_df, df]).fillna(False).astype(bool)
         b = plf.to_bitvectors(df)
         sim = DataStructs.BulkTverskySimilarity(b[0], b[1:], 1, 0)
         sim = [round(x, 3) for x in sim]
@@ -126,7 +129,8 @@ def calc_plif_mp(protein_fname, ligand_fname, sanitize_protein, plif_list=None, 
             plif_ref_df = None
 
         df = list(p.imap(partial(calc_plif, protein_fname=protein_fname, sanitize_protein=sanitize_protein, plif_ref_df=plif_ref_df), chunks))
-        df = pd.concat(df).fillna(False)
+        with pd.option_context("future.no_silent_downcasting", True):
+            df = pd.concat(df).fillna(False).astype(bool)
         if plif_list is None:
             df = df.reindex(sorted(df.columns), axis=1)
     finally:
