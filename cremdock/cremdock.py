@@ -316,8 +316,8 @@ def entry_point():
                         'computations.')
 
     if args.plif is not None and (args.plif_protein is None or not os.path.isfile(args.plif_protein)):
-        raise FileNotFoundError('PLIF pattern was specified but the protein file is missing or was not supplied. '
-                                'Calculation was aborted.')
+        raise FileNotFoundError(f'PLIF pattern was specified but the protein file was not supplied of the path is '
+                                f'incorrect ({args.plif_protein}). Calculation was aborted.')
 
     if args.hostfile is not None:
         from dask.distributed import Client
