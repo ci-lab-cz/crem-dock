@@ -48,7 +48,7 @@ def filter_by_plif(mols, plif_ref, protein_fname, threshold=1):
                           'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
     fp.run_from_iterable((plf.Molecule.from_rdkit(mol) for mol in mols), prot)   # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
-    df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
+    df.columns = ['.'.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     df.index = [mol.GetProp('_Name') for mol in mols]
     ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
     with pd.option_context("future.no_silent_downcasting", True):
@@ -76,7 +76,7 @@ def plif_similarity(mol, plif_protein_fname, plif_ref_df, ncpu=1):
                           'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
     fp.run_from_iterable([plf.Molecule.from_rdkit(mol)], plf_prot, n_jobs=ncpu)
     df = fp.to_dataframe()
-    df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
+    df.columns = ['.'.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     with pd.option_context("future.no_silent_downcasting", True):
         df = pd.concat([plif_ref_df, df]).fillna(False).astype(bool)
     b = plf.to_bitvectors(df)
@@ -99,7 +99,7 @@ def calc_plif(mols, protein_fname, sanitize_protein, plif_ref_df=None, ncpu=1):
                           'FaceToFace', 'EdgeToFace', 'MetalAcceptor'])
     fp.run_from_iterable([plf.Molecule.from_rdkit(mol) for mol in mols], plf_prot, n_jobs=ncpu)  # danger, hope it will always keep the order of molecules
     df = fp.to_dataframe()
-    df.columns = [''.join(item.strip().lower() for item in items[1:]) for items in df.columns]
+    df.columns = ['.'.join(item.strip().lower() for item in items[1:]) for items in df.columns]
     if plif_ref_df is not None:
         with pd.option_context("future.no_silent_downcasting", True):
             df = pd.concat([plif_ref_df, df]).fillna(False).astype(bool)
