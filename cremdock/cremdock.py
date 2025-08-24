@@ -248,7 +248,7 @@ def entry_point():
     group5 = parser.add_argument_group('Docking parameters')
     group5.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver', 'molgpka'],
                         help='choose a protonation program supported by EasyDock.')
-    group5.add_argument('--program', default='vina', required=False, choices=['vina', 'gnina'],
+    group5.add_argument('--program', default='vina', required=False, choices=['vina', 'gnina', 'vina-gpu', 'qvina'],
                         help='name of a docking program.')
     group5.add_argument('--config', metavar='FILENAME', required=False,
                         help='YAML file with parameters used by docking program.\n'
