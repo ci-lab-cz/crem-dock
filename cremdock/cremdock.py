@@ -284,6 +284,8 @@ def entry_point():
 
     args = parser.parse_args()
 
+    os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
+
     if not args.log:
         args.log = os.path.splitext(os.path.abspath(args.output))[0] + '.log'
     logging.basicConfig(filename=args.log, encoding='utf-8', level=args.log_level * 10, datefmt='%Y-%m-%d %H:%M:%S',
