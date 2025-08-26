@@ -336,6 +336,12 @@ def entry_point():
     elif args.program == 'gnina':
         from easydock.gnina_dock import mol_dock
         from easydock.vina_dock import pred_dock_time
+    elif args.program == 'vina-gpu':
+        from easydock.vinagpu_dock import mol_dock
+        from easydock.vina_dock import pred_dock_time
+    elif args.program == 'qvina':
+        from easydock.qvina_dock import mol_dock
+        from easydock.vina_dock import pred_dock_time
     else:
         raise ValueError(f'Illegal program argument was supplied: {args.program}')
 
