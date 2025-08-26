@@ -23,6 +23,12 @@ def check_score_order(conn):
         'vina': {
             'scoring': True,
             },
+        'vina-gpu': {
+            'scoring': True,
+            },
+        'qvina': {
+            'scoring': True,
+            },
         'gnina': {
             'scoring': {
                 'vinardo': True,
@@ -39,7 +45,7 @@ def check_score_order(conn):
     program_from_db = yaml.safe_load(cur.execute("SELECT yaml FROM setup").fetchone()[0])['program']
     if program_from_db not in programs:
         raise KeyError(f"Program '{program_from_db}' not found in the dictionary.")
-    if program_from_db == 'vina':
+    if program_from_db in ['vina', 'vina-gpu', 'qvina']:
         return programs[program_from_db]['scoring']
 
     scoring_from_db = yaml.safe_load(cur.execute("SELECT config FROM setup").fetchone()[0])['scoring']
