@@ -5,6 +5,7 @@ import os
 import sqlite3
 from functools import partial
 from multiprocessing import Pool
+from rdkit import Chem
 
 from crem.utils import sample_csp3, filter_max_ring_size
 
@@ -282,6 +283,8 @@ def entry_point():
     group7.add_argument('-c', '--ncpu', metavar='INTEGER', default=1, type=cpu_type,
                         help='number of cpus.')
 
+    Chem.SetDefaultPickleProperties(Chem.PropertyPickleOptions.AllProps)
+
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(os.path.abspath(args.output)), exist_ok=True)
@@ -348,8 +351,8 @@ def entry_point():
     sample_func = sample_functions[args.sample_func] if args.sample_func else None
     filter_func = filter_functions[args.filter_func] if args.filter_func else None
 
+    iteration = 0
     try:
-        final_iteration = False
         while True:
             iteration, res = make_iteration(dbname=args.output, config=args.config, mol_dock_func=mol_dock,
                                             priority_func=pred_dock_time, ntop=args.ntop, nclust=args.nclust,
