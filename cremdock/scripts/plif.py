@@ -167,6 +167,7 @@ def entry_point():
                       plif_list=args.ref_plif,
                       sanitize_protein=not args.no_protein_sanitization,
                       ncpu=args.ncpu)
+    df.index.name = 'id'
     df.to_csv(args.output, sep='\t')
 
 
