@@ -10,6 +10,7 @@ from rdkit import Chem
 from crem.utils import sample_csp3, filter_max_ring_size
 
 from easydock import database as eadb
+from easydock.args_validation import protonation_type, protonation_programs
 from easydock.run_dock import get_supplied_args, docking
 
 from cremdock import database
@@ -247,8 +248,10 @@ def entry_point():
                              'explicit. Required for correct PLIF detection.')
 
     group5 = parser.add_argument_group('Docking parameters')
-    group5.add_argument('--protonation', default=None, required=False, choices=['chemaxon', 'pkasolver', 'molgpka'],
-                        help='choose a protonation program supported by EasyDock.')
+    group5.add_argument('--protonation', default=None, required=False, type=protonation_type,
+                            help=f'choose a protonation program supported by EasyDock ({", ".join(protonation_programs)}). '
+                                 f'An existing apptainer container (.sif) with implemented protonation script and '
+                                 f'an installed environment can be passed as well.')
     group5.add_argument('--program', default='vina', required=False, choices=['vina', 'gnina', 'vina-gpu', 'qvina'],
                         help='name of a docking program.')
     group5.add_argument('--config', metavar='FILENAME', required=False,
