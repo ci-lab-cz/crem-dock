@@ -266,6 +266,5 @@ def get_pareto_front(mol_dict: dict[str, Mol],
                 for mol_id, sa_score in p.starmap(calc_sa_score, [(v, k) for k, v in mol_dict.items()]):
                     scores_2[mol_id] = [-scores[mol_id], sa_score]
     pareto_front_df = pd.DataFrame.from_dict(scores_2, orient='index')
-    print(pareto_front_df)
     mol_ids_pareto = identify_pareto(pareto_front_df)
     return mol_ids_pareto

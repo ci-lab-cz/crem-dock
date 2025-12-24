@@ -1,4 +1,6 @@
+import os
 import sqlite3
+import sys
 from functools import partial
 from multiprocessing import Pool
 
@@ -6,7 +8,7 @@ import pandas as pd
 from easydock import database as eadb
 from easydock.auxiliary import mol_name_split
 from rdkit import Chem
-from rdkit.Chem import QED
+from rdkit.Chem import QED, RDConfig
 from rdkit.Chem.Crippen import MolLogP
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
@@ -16,6 +18,9 @@ from cremdock.crem_grow import get_protein_heavy_atoms_xyz_from_string
 from cremdock.molecules import get_isomers, get_rmsd
 from cremdock.user_protected_atoms import get_canon_for_atom_idx, get_protected_canon_ids
 from cremdock.scripts import plif
+
+sys.path.append(os.path.join(RDConfig.RDContribDir, 'SA_Score'))
+import sascorer
 
 
 def create_db(fname, args, args_to_save):
@@ -39,6 +44,7 @@ def create_db(fname, args, args_to_save):
         cur.execute("ALTER TABLE mols ADD logp REAL")
         cur.execute("ALTER TABLE mols ADD tpsa REAL")
         cur.execute("ALTER TABLE mols ADD qed REAL")
+        cur.execute("ALTER TABLE mols ADD sa_score REAL")
         cur.execute("ALTER TABLE mols ADD rmsd REAL")
         cur.execute("ALTER TABLE mols ADD plif_sim REAL")
         cur.execute("ALTER TABLE mols ADD protected_user_canon_ids TEXT DEFAULT NULL")
@@ -61,7 +67,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                 tmp = line.strip().split()
                 smi = Chem.CanonSmiles(tmp[0])
                 name = tmp[1] if len(tmp) > 1 else '000-' + str(i).zfill(6)
-                mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(Chem.MolFromSmiles(smi))
+                mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, mol_sa_score = calc_properties(Chem.MolFromSmiles(smi))
                 data.append((f'{prefix}-{name}' if prefix else name,
                              0,
                              smi,
@@ -69,8 +75,9 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                              mol_rtb,
                              mol_logp,
                              mol_qed,
-                             mol_tpsa))
-        cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa']
+                             mol_tpsa,
+                             mol_sa_score))
+        cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'sa_score']
     elif fname.lower().endswith('.sdf'):
         make_docking = False
         for i, mol in enumerate(Chem.SDMolSupplier(fname, removeHs=False)):
@@ -86,6 +93,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                     protected_user_ids = [int(idx) - 1 for idx in mol.GetProp('protected_user_ids').split(',')]
                     protected_user_canon_ids = ','.join(map(str, get_canon_for_atom_idx(mol, protected_user_ids)))
                 mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
+                mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, mol_sa_score = calc_properties(mol)
                 data.append((f'{prefix}-{name}' if prefix else name,
                              0,
                              Chem.MolToSmiles(Chem.RemoveHs(mol), isomericSmiles=True),
@@ -94,9 +102,10 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
                              mol_logp,
                              mol_qed,
                              mol_tpsa,
+                             mol_sa_score,
                              Chem.MolToMolBlock(mol),
                              protected_user_canon_ids))
-        cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'mol_block', 'protected_user_canon_ids']
+        cols = ['id', 'iteration', 'smi', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'sa_score', 'mol_block', 'protected_user_canon_ids']
     else:
         raise ValueError('input file with fragments has unrecognizable extension. '
                          'Only SMI, SMILES and SDF are allowed.')
@@ -165,12 +174,14 @@ def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
 
 
 def calc_properties(mol):
+    mol = Chem.RemoveHs(mol)
     mw = round(MolWt(mol), 2)
     rtb = calc_rtb(mol)
     logp = round(MolLogP(mol), 2)
     qed = round(QED.qed(mol), 3)
     tpsa = round(CalcTPSA(mol), 2)
-    return mw, rtb, logp, qed, tpsa
+    sa_score = round(sascorer.calculateScore(mol), 2)
+    return mw, rtb, logp, qed, tpsa, sa_score
 
 
 def prep_data_for_insert(parent_mol, mol, n, iteration, max_rtb, max_mw, max_logp, max_tpsa, prefix):
@@ -188,7 +199,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, max_rtb, max_mw, max_log
     :return:
     """
     data = []
-    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa = calc_properties(mol)
+    mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa, mol_sa_score = calc_properties(mol)
     if mol_mw <= max_mw and mol_rtb <= max_rtb and mol_logp <= max_logp and mol_tpsa <= max_tpsa:
         isomers = get_isomers(mol)
         for i, m in enumerate(isomers):
@@ -203,7 +214,7 @@ def prep_data_for_insert(parent_mol, mol, n, iteration, max_rtb, max_mw, max_log
                 child_protected_canon_user_id = ','.join(map(str, child_protected_canon_user_id))
             data.append((mol_id, iteration, Chem.MolToSmiles(Chem.RemoveHs(m), isomericSmiles=True),
                          parent_mol.GetProp('_Name'), mol_mw, mol_rtb, mol_logp, mol_qed, mol_tpsa,
-                         child_protected_canon_user_id))
+                         mol_sa_score, child_protected_canon_user_id))
     return data
 
 

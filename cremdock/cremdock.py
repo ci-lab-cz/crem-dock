@@ -152,7 +152,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
             finally:
                 p.close()
                 p.join()
-            cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'protected_user_canon_ids']
+            cols = ['id', 'iteration', 'smi', 'parent_id', 'mw', 'rtb', 'logp', 'qed', 'tpsa', 'sa_score', 'protected_user_canon_ids']
             inserted_row_count = eadb.insert_db(dbname, data=data, cols=cols)
             logging.info(f'iteration {iteration}, {inserted_row_count} new mols were inserted in DB after filtering by '
                          f'physicochemical properties')
