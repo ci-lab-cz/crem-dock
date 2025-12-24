@@ -1,18 +1,26 @@
+import os
+import sys
 from collections import defaultdict
+from multiprocessing import Pool, cpu_count
 
 import numpy as np
 import pandas as pd
-from rdkit.Chem import AllChem
+from rdkit.Chem import AllChem, RDConfig
 from rdkit.Chem.Crippen import MolLogP
+from rdkit.Chem import DataStructs
 from rdkit.Chem.Descriptors import MolWt
+from rdkit.Chem.rdchem import Mol
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
-from sklearn.cluster import KMeans
+from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
+from sklearn.cluster import AgglomerativeClustering
 
 from cremdock.database import get_mols
 from cremdock.auxiliary import sort_two_lists, calc_rtb
 from cremdock.crem_grow import grow_mol_crem, grow_mols_crem
-from cremdock.molecules import get_mol_ids
+from cremdock.molecules import get_mol_ids, neutralize_atoms
 
+sys.path.append(os.path.join(RDConfig.RDContribDir, 'SA_Score'))
+import sascorer
 
 def selection_and_grow_greedy(mols, conn, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, ntop, ranking_func, ncpu=1,
                               **kwargs):
@@ -40,7 +48,7 @@ def selection_and_grow_greedy(mols, conn, protein_xyz, max_mw, max_rtb, max_logp
 
 
 def selection_and_grow_clust(mols, conn, nclust, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, ntop,
-                             ranking_func, ncpu=1, **kwargs):
+                             ranking_func, use_murcko=False, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -53,13 +61,14 @@ def selection_and_grow_clust(mols, conn, nclust, protein_xyz, max_mw, max_rtb, m
     :param max_tpsa:
     :param ntop:
     :param ranking_func:
+    :param use_murcko:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
     """
     if len(mols) == 0:
         return []
-    clusters = get_clusters_by_kmeans(mols, nclust)
+    clusters = get_clusters(mols, nclust, use_murcko=use_murcko)
     sorted_clusters = sort_clusters(conn, clusters, ranking_func)
     # select top n mols from each cluster
     selected_mols = []
@@ -74,7 +83,7 @@ def selection_and_grow_clust(mols, conn, nclust, protein_xyz, max_mw, max_rtb, m
 
 
 def selection_and_grow_clust_deep(mols, conn, nclust, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, ntop,
-                                  ranking_func, ncpu=1, **kwargs):
+                                  ranking_func, use_murcko=False, ncpu=1, **kwargs):
     """
 
     :param mols:
@@ -87,6 +96,7 @@ def selection_and_grow_clust_deep(mols, conn, nclust, protein_xyz, max_mw, max_r
     :param max_tpsa:
     :param ntop:
     :param ranking_func:
+    :param use_murcko:
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
@@ -94,7 +104,7 @@ def selection_and_grow_clust_deep(mols, conn, nclust, protein_xyz, max_mw, max_r
     if len(mols) == 0:
         return []
     res = dict()
-    clusters = get_clusters_by_kmeans(mols, nclust)
+    clusters = get_clusters(mols, nclust, use_murcko=use_murcko)
     sorted_clusters = sort_clusters(conn, clusters, ranking_func)
     # create dict of named mols
     mol_ids = get_mol_ids(mols)
@@ -132,8 +142,8 @@ def identify_pareto(df):
     return population_ids[pareto_front].tolist()
 
 
-def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein_xyz, ranking_func, ncpu,
-                              **kwargs):
+def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, protein_xyz, ranking_func,
+                              pareto_property, ncpu, **kwargs):
     """
 
     :param mols:
@@ -144,6 +154,7 @@ def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, p
     :param max_tpsa:
     :param protein_xyz:
     :param ranking_func:
+    :param pareto_property: str value from "mw" or "sa"
     :param ncpu:
     :param kwargs:
     :return: dict of parent mol and lists of corresponding generated mols, {parent_mol: [child_mol1, child_mol2, ...], ...}
@@ -157,16 +168,13 @@ def selection_and_grow_pareto(mols, conn, max_mw, max_rtb, max_logp, max_tpsa, p
     mol_ids = get_mol_ids(mols)
     mol_dict = dict(zip(mol_ids, mols))
     scores = ranking_func(conn, mol_ids)
-    # needed for inverting X-axis values, so the values are arranged from largest to smallest with a minus sign
-    scores_mw = {mol_id: [-score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
-    pareto_front_df = pd.DataFrame.from_dict(scores_mw, orient='index')
-    mols_pareto = identify_pareto(pareto_front_df)
-    mols = get_mols(conn, mols_pareto)
+    pareto_mol_ids = get_pareto_front(mol_dict, scores, parameter=pareto_property, ncpu=ncpu)
+    mols = get_mols(conn, pareto_mol_ids)
     res = grow_mols_crem(mols, protein_xyz, max_mw=max_mw, max_rtb=max_rtb, max_logp=max_logp, max_tpsa=max_tpsa, ncpu=ncpu, **kwargs)
     return res
 
 
-def get_clusters_by_kmeans(mols, nclust):
+def get_clusters(mols, nclust, use_murcko=False):
     """
     Returns tuple of tuples with mol ids in each cluster
     :param mols: list of molecules
@@ -177,10 +185,19 @@ def get_clusters_by_kmeans(mols, nclust):
     fps = []
     idx_mols = []
     for mol in mols:
+        mol = neutralize_atoms(mol)
+        if use_murcko:
+            mol = GetScaffoldForMol(mol)
         fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048))
         idx_mols.append(mol.GetProp('_Name'))
-    X = np.array(fps)
-    labels = KMeans(n_clusters=nclust, random_state=0).fit_predict(X).tolist()
+    X = np.zeros((len(fps), len(fps)), dtype=float)
+    for i in range(len(fps)):
+        dist = DataStructs.BulkTanimotoSimilarity(fps[i], fps[i+1:], returnDistance=True)
+        X[i, i+1:] = dist
+        X[i+1:, i] = dist
+    labels = AgglomerativeClustering(n_clusters=nclust,
+                                     metric='precomputed',
+                                     linkage='average').fit_predict(X).tolist()
     for idx, cluster in zip(idx_mols, labels):
         clusters[cluster].append(idx)
     return tuple(tuple(x) for x in clusters.values())
@@ -217,3 +234,38 @@ def sort_clusters(conn, clusters, ranking_func):
         s, mol_ids = sort_two_lists([scores[mol_id] for mol_id in cluster], cluster, reverse=True)
         output.append(mol_ids)
     return output
+
+
+def calc_sa_score(mol: Mol, mol_id: str = None) -> tuple[str, float]:
+    sa_score = sascorer.calculateScore(mol)
+    return mol_id, sa_score
+
+
+def get_pareto_front(mol_dict: dict[str, Mol],
+                     scores: dict[str, float],
+                     parameter: str,
+                     ncpu: int = None) -> list[Mol]:
+    """
+
+    :param mol_dict: dict of Mols
+    :param scores: dict of docking scores
+    :param parameter: can be "mw" os "sa"
+    :param ncpu: number of cpu
+    :return:
+    """
+    mol_dict = {mol_id: neutralize_atoms(mol) for mol_id, mol in mol_dict.items()}
+    # -score: needed for inverting X-axis values, so the values are arranged from largest to smallest with a minus sign
+    if parameter.lower() == 'mw':
+        scores_2 = {mol_id: [-score, MolWt(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
+    elif parameter.lower() == 'sa':
+        if ncpu is None or ncpu <= 1:
+            scores_2 = {mol_id: [-score, sascorer.calculateScore(mol_dict[mol_id])] for mol_id, score in scores.items() if score is not None}
+        else:
+            scores_2 = dict()
+            with Pool(ncpu) as p:
+                for mol_id, sa_score in p.starmap(calc_sa_score, [(v, k) for k, v in mol_dict.items()]):
+                    scores_2[mol_id] = [-scores[mol_id], sa_score]
+    pareto_front_df = pd.DataFrame.from_dict(scores_2, orient='index')
+    print(pareto_front_df)
+    mol_ids_pareto = identify_pareto(pareto_front_df)
+    return mol_ids_pareto

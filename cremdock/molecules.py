@@ -56,6 +56,7 @@ def get_major_tautomer(mol_dict):
 
 def neutralize_atoms(mol):
     # https://www.rdkit.org/docs/Cookbook.html#neutralizing-molecules
+    mol = Chem.RemoveHs(mol)
     pattern = Chem.MolFromSmarts("[+1!h0!$([*]~[-1,-2,-3,-4]),-1!$([*]~[+1,+2,+3,+4])]")
     at_matches = mol.GetSubstructMatches(pattern)
     at_matches_list = [y[0] for y in at_matches]
@@ -81,8 +82,8 @@ def get_rmsd(child_mol, parent_mol):
     :param parent_mol: Mol
     :return:
     """
-    child_mol = neutralize_atoms(Chem.RemoveHs(child_mol))
-    parent_mol = neutralize_atoms(Chem.RemoveHs(parent_mol))
+    child_mol = neutralize_atoms(child_mol)
+    parent_mol = neutralize_atoms(parent_mol)
     match_ids = child_mol.GetSubstructMatches(parent_mol, uniquify=False, useChirality=True)
     best_rms = float('inf')
     for ids in match_ids:

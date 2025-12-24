@@ -98,21 +98,28 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                     res = selection_and_grow_greedy(mols=mols, conn=conn, protein_xyz=protein_xyz,
                                                     ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                     ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-                elif alg_type in [2, 3] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
+                elif alg_type in [2, 3, 6] and len(mols) <= nclust:  # if number of mols is lower than nclust grow all mols
                     res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                          max_tpsa=tpsa, ncpu=ncpu, **kwargs)
-                elif alg_type == 2:
+                elif alg_type in [2, 6]:
+                    use_murcko = True if alg_type == 6 else False
                     res = selection_and_grow_clust_deep(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
                                                         ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                                        ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                                                        ranking_func=ranking_score_func, use_murcko=use_murcko,
+                                                        ncpu=ncpu, **kwargs)
                 elif alg_type == 3:
                     res = selection_and_grow_clust(mols=mols, conn=conn, nclust=nclust, protein_xyz=protein_xyz,
                                                    ntop=ntop, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
                                                    ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
-                elif alg_type == 4:
+                elif alg_type in [4, 5]:
+                    if alg_type == 4:
+                        pareto_property = 'mw'
+                    elif alg_type == 5:
+                        pareto_property = 'sa'
                     res = selection_and_grow_pareto(mols=mols, conn=conn, max_mw=mw, max_rtb=rtb, max_logp=logp,
                                                     max_tpsa=tpsa, protein_xyz=protein_xyz,
-                                                    ranking_func=ranking_score_func, ncpu=ncpu, **kwargs)
+                                                    ranking_func=ranking_score_func, pareto_property=pareto_property,
+                                                    ncpu=ncpu, **kwargs)
                 logging.debug(f'iteration {iteration}, end selection and growing')
 
         else:
@@ -122,7 +129,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
                                  ncpu=ncpu, **kwargs)
             logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
 
-        logging.info(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values())}')
+        logging.info(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values()) if res else 0}')
 
         if res:
             # res may containg duplicated molecules between different parent molecules
@@ -178,11 +185,14 @@ def entry_point():
     group3 = parser.add_argument_group('Generation parameters')
     group3.add_argument('--n_iterations', metavar='INTEGER', default=None, type=int,
                         help='maximum number of iterations.')
-    group3.add_argument('-t', '--search', metavar='INTEGER', default=2, type=int, choices=[1, 2, 3, 4],
-                        help='the number of the search algorithm: 1 - greedy search, 2 - deep clustering (if some '
+    group3.add_argument('-t', '--search', metavar='INTEGER', default=2, type=int,
+                        choices=[1, 2, 3, 4, 5, 6],
+                        help='the number of the search algorithm: 1 - greedy search; 2 - deep clustering (if some '
                              'molecules from a cluster cannot be grown they will be replaced with other lower scored '
-                             'ones), 3 - clustering (fixed number of molecules is selected irrespective their ability '
-                             'to be grown), 4 - Pareto front (MW vs. docking score).')
+                             'ones); 3 - clustering (fixed number of molecules is selected irrespective their ability '
+                             'to be grown); 4 - Pareto front (MW vs. ranking score); 5 - Pareto front (SA vs. ranking '
+                             'score), where ranking score depends on --ranking argument; 6 - deep clustering based on '
+                             'scaffolds.')
     group3.add_argument('--ntop', metavar='INTEGER', type=int, default=2, required=False,
                         help='the number of the best molecules to select for the next iteration in the case of greedy '
                              'search (1) or the number of molecules from each cluster in the case of '

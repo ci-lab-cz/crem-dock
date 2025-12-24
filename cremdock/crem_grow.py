@@ -61,7 +61,7 @@ def get_protein_heavy_atoms_xyz_from_string(pdb_block):
 
 
 def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_threshold=2, ncpu=1, **kwargs):
-    mol_0 = neutralize_atoms(Chem.RemoveHs(mol))  # add neutralize_atoms to calc correct logp and tpsa
+    mol_0 = neutralize_atoms(mol)  # add neutralize_atoms to calc correct logp and tpsa
     mw = max_mw - Chem.Descriptors.MolWt(mol_0)
     if mw <= 0:
         return []
@@ -82,7 +82,7 @@ def grow_mol_crem(mol, protein_xyz, max_mw, max_rtb, max_logp, max_tpsa, h_dist_
     # remove explicit hydrogen and charges and redefine protected atom ids
     for i in protected_ids:
         mol.GetAtomWithIdx(i).SetIntProp('__tmp', 1)
-    mol = neutralize_atoms(Chem.RemoveHs(mol))
+    mol = neutralize_atoms(mol)
     protected_ids = []
     for a in mol.GetAtoms():
         if a.HasProp('__tmp') and a.GetIntProp('__tmp'):
