@@ -116,7 +116,7 @@ def insert_starting_structures_to_db(fname, db_fname, prefix):
 def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
     """
     Post-process all docked molecules from an individual iteration.
-    Calculate rmsd of a molecule to a parent mol. Insert rmsd in output db.
+    Calculate rmsd of a molecule to a parent mol and PLIFs.
     :param conn: connection to docking DB
     :param plif_ref: list of reference interactions (str)
     :param plif_protein_fname: PDB file with a protein containing all hydrogens to calc plif
@@ -124,49 +124,57 @@ def update_db(conn, iteration, plif_ref=None, plif_protein_fname=None, ncpu=1):
     :return:
     """
     cur = conn.cursor()
-    mol_ids = get_docked_mol_ids(conn, iteration)
-    mols = get_mols(conn, mol_ids)
+    docked_mol_ids = get_docked_mol_ids(conn, iteration)
+
     # parent_ids and parent_mols can be empty if all compounds do not have parents
     parent_ids = dict(eadb.select_from_db(cur,
                                           "SELECT id, parent_id FROM mols WHERE id IN (?) AND parent_id IS NOT NULL",
-                                          mol_ids))
+                                          docked_mol_ids))
     uniq_parent_ids = list(set(parent_ids.values()))
     parent_mols = get_mols(conn, uniq_parent_ids)
     parent_mols = {m.GetProp('_Name'): m for m in parent_mols}
 
     # update rmsd
-    for mol in mols:
-        rms = None
+    sql = f"SELECT id FROM mols WHERE iteration = {iteration} AND rmsd IS NULL"
+    rmsd_null_mol_ids = [i[0] for i in cur.execute(sql).fetchall()]
+    mols = get_mols(conn, set(docked_mol_ids) & set(rmsd_null_mol_ids))
+
+    for i, mol in enumerate(mols, 1):
         mol_id = mol.GetProp('_Name')
         try:
             parent_mol = parent_mols[parent_ids[mol_id]]
             rms = get_rmsd(mol, parent_mol)
+            cur.execute("""UPDATE mols
+                           SET rmsd = ?
+                           WHERE id = ?
+                        """, (rms, mol_id))
         except KeyError:  # missing parent mol
             pass
-
-        cur.execute("""UPDATE mols
-                           SET 
-                               rmsd = ? 
-                           WHERE
-                               id = ?
-                        """, (rms, mol_id))
+        if i % 100 == 0:
+            conn.commit()
     conn.commit()
 
     # update plif
     if plif_ref is not None:
+        sql = f"SELECT id FROM mols WHERE iteration = {iteration} AND plif_sim IS NULL"
+        plif_null_mol_ids = [i[0] for i in cur.execute(sql).fetchall()]
+        mols = get_mols(conn, set(docked_mol_ids) & set(plif_null_mol_ids))
+
         pool = Pool(ncpu)
         try:
             ref_df = pd.DataFrame(data={item: True for item in plif_ref}, index=['reference'])
-            for mol_id, sim in pool.imap_unordered(partial(plif.plif_similarity,
-                                                           plif_protein_fname=plif_protein_fname,
-                                                           plif_ref_df=ref_df),
-                                                   mols):
+            for i, (mol_id, sim) in enumerate(pool.imap_unordered(partial(plif.plif_similarity,
+                                                                          plif_protein_fname=plif_protein_fname,
+                                                                          plif_ref_df=ref_df),
+                                                                  mols), 1):
                 cur.execute(f"""UPDATE mols
                                    SET 
                                        plif_sim = ? 
                                    WHERE
                                        id = ?
                                 """, (sim, mol_id))
+                if i % 100 == 0:
+                    conn.commit()
             conn.commit()
         finally:
             pool.close()
