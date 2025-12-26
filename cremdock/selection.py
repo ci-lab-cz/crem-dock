@@ -7,12 +7,11 @@ import numpy as np
 import pandas as pd
 from rdkit.Chem import AllChem, RDConfig
 from rdkit.Chem.Crippen import MolLogP
-from rdkit.Chem import DataStructs
 from rdkit.Chem.Descriptors import MolWt
 from rdkit.Chem.rdchem import Mol
 from rdkit.Chem.rdMolDescriptors import CalcTPSA
 from rdkit.Chem.Scaffolds.MurckoScaffold import GetScaffoldForMol
-from sklearn.cluster import AgglomerativeClustering
+from sklearn.cluster import KMeans
 
 from cremdock.database import get_mols
 from cremdock.auxiliary import sort_two_lists, calc_rtb
@@ -190,14 +189,8 @@ def get_clusters(mols, nclust, use_murcko=False):
             mol = GetScaffoldForMol(mol)
         fps.append(AllChem.GetMorganFingerprintAsBitVect(mol, 2, nBits=2048))
         idx_mols.append(mol.GetProp('_Name'))
-    X = np.zeros((len(fps), len(fps)), dtype=float)
-    for i in range(len(fps)):
-        dist = DataStructs.BulkTanimotoSimilarity(fps[i], fps[i+1:], returnDistance=True)
-        X[i, i+1:] = dist
-        X[i+1:, i] = dist
-    labels = AgglomerativeClustering(n_clusters=nclust,
-                                     metric='precomputed',
-                                     linkage='average').fit_predict(X).tolist()
+    x = np.array(fps)
+    labels = KMeans(n_clusters=nclust, random_state=0).fit_predict(x).tolist()
     for idx, cluster in zip(idx_mols, labels):
         clusters[cluster].append(idx)
     return tuple(tuple(x) for x in clusters.values())
