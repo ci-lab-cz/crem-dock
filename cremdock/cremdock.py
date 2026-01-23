@@ -22,8 +22,13 @@ from cremdock.molecules import get_major_tautomer
 from cremdock.ranking import ranking_score
 from cremdock.selection import selection_and_grow_greedy, selection_and_grow_clust, selection_and_grow_clust_deep, \
     selection_and_grow_pareto
+from cremdock.sampling import sample_score, sample_score_exp, sample_HAC
 
-sample_functions = {'sample_csp3': sample_csp3}
+sample_functions = {'sample_csp3': sample_csp3,
+                    'sample_score': sample_score,
+                    'sample_score_square': partial(sample_score, degree=2),
+                    'sample_score_exp': sample_score_exp,
+                    'sample_HAC': sample_HAC}
 
 filter_functions = {'filter_max_ring_size': filter_max_ring_size}
 
