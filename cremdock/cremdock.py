@@ -237,6 +237,9 @@ def entry_point():
     group2.add_argument('--filter_func', default=None, required=False, choices=filter_functions.keys(),
                         help='Choose a function to pre-filter fragments for growing.'
                              'By default no pre-filtering will be applied.')
+    group2.add_argument('--set_names', metavar='SET NAMES', type=str, nargs='*', default=None, required=False,
+                        help='column name(s) in radius tables (v1 database only) defining the set(s) of fragments. '
+                             'If None (default), all available set columns are used. Ignored for v0 databases.')
 
     group4 = parser.add_argument_group('Filters')
     group4.add_argument('--rmsd', metavar='NUMERIC', type=float, default=None, required=False,
@@ -382,7 +385,7 @@ def entry_point():
                                             prefix=args.prefix, db_name=args.db, radius=args.radius,
                                             min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                             max_replacements=args.max_replacements, sample_func=sample_func,
-                                            filter_func=filter_func, tautomerize=args.tautomerize,
+                                            filter_func=filter_func, set_names=args.set_names, tautomerize=args.tautomerize,
                                             n_iterations=args.n_iterations)
             make_docking = True
 
