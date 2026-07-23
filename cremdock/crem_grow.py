@@ -32,10 +32,11 @@ def get_protected_ids(mol, protein_xyz, dist_threshold):
 
     output_ids = []
     for a in mol.GetAtoms():
-        if a.GetAtomicNum() > 1:
+        # only atoms with Hs can be protected, e.g. [O-] will not be as it may be further neutralized and grow
+        if a.GetAtomicNum() > 1 and a.GetTotalNumHs() > 0:
             # all hydrogens of a heavy atom are close to protein
             h_neighbors = set(n.GetIdx() for n in a.GetNeighbors() if n.GetAtomicNum() == 1)
-            if not (h_neighbors - ids) and h_neighbors:
+            if not (h_neighbors - ids):
                 output_ids.append(a.GetIdx())
 
     return output_ids
