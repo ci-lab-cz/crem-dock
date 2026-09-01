@@ -15,7 +15,7 @@ from easydock.run_dock import get_supplied_args, docking
 
 from cremdock import database
 from cremdock import user_protected_atoms
-from cremdock.arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type
+from cremdock.arg_types import cpu_type, filepath_type, similarity_value_type, str_lower_type, ring_size_type
 from cremdock.crem_grow import grow_mols_crem
 from cremdock.database import get_protein_heavy_atom_xyz
 from cremdock.molecules import get_major_tautomer
@@ -45,7 +45,7 @@ def supply_parent_child_mols(d):
 def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, mw, rmsd, rtb, logp, tpsa,
                    alg_type, ranking_score_func, ncpu, protonation, ring_sample, make_docking=True, tautomerize=False,
                    dask_client=None, plif_list=None, plif_protein=None, plif_cutoff=1, prefix=None,
-                   n_iterations=None, **kwargs):
+                   n_iterations=None, make_cycle=False, **kwargs):
     iteration = database.get_last_iter_from_db(dbname)
     if n_iterations and n_iterations == iteration:
         final_iteration = True
@@ -131,7 +131,7 @@ def make_iteration(dbname, config, mol_dock_func, priority_func, ntop, nclust, m
             logging.debug(f'iteration {iteration}, docking was omitted, all mols are grown')
             mols = database.get_mols(conn, database.get_docked_mol_ids(conn, iteration))
             res = grow_mols_crem(mols=mols, protein_xyz=protein_xyz, max_mw=mw, max_rtb=rtb, max_logp=logp, max_tpsa=tpsa,
-                                 ncpu=ncpu, **kwargs)
+                                 ncpu=ncpu, make_cycle=make_cycle, **kwargs)
             logging.debug(f'iteration {iteration}, docking was omitted, all mols were grown')
 
         logging.info(f'iteration {iteration}, number of mols after growing: {sum(len(v)for v in res.values()) if res else 0}')
@@ -238,8 +238,19 @@ def entry_point():
                         help='Choose a function to pre-filter fragments for growing.'
                              'By default no pre-filtering will be applied.')
     group2.add_argument('--set_names', metavar='SET NAMES', type=str, nargs='*', default=None, required=False,
-                        help='column name(s) in radius tables (v1 database only) defining the set(s) of fragments. '
+                        help='column name(s) in radius tables (v2 database only) defining the set(s) of fragments. '
                              'If None (default), all available set columns are used. Ignored for v0 databases.')
+    group2.add_argument('--make_cycle', action='store_true', default=False,
+                        help='if set, in addition to growing molecules with crem.crem.grow_mol, also try to close a '
+                             'new ring on each molecule with crem.crem.make_cycle. Results of both functions are '
+                             'pooled together and, if the pool is larger than max_replacements, that many molecules '
+                             'are chosen randomly from the pool.')
+    group2.add_argument('--ring_size', metavar='INTEGER', type=int, nargs='+', default=None, required=False,
+                        help='size of the new ring to form with make_cycle (in atoms). Give one value for a single '
+                             'size or two values (min max) for a range. Ignored if --make_cycle is not set.')
+    group2.add_argument('--extended_ring_closures', action='store_true', default=False,
+                        help='if set, make_cycle will query acyclic-cut linker fragments (ring_closures=False) '
+                             'instead of ring-closure (arc) fragments. Ignored if --make_cycle is not set.')
 
     group4 = parser.add_argument_group('Filters')
     group4.add_argument('--rmsd', metavar='NUMERIC', type=float, default=None, required=False,
@@ -371,6 +382,7 @@ def entry_point():
 
     sample_func = sample_functions[args.sample_func] if args.sample_func else None
     filter_func = filter_functions[args.filter_func] if args.filter_func else None
+    ring_size = ring_size_type(args.ring_size)
 
     iteration = 0
     try:
@@ -385,8 +397,9 @@ def entry_point():
                                             prefix=args.prefix, db_name=args.db, radius=args.radius,
                                             min_freq=args.min_freq, min_atoms=args.min_atoms, max_atoms=args.max_atoms,
                                             max_replacements=args.max_replacements, sample_func=sample_func,
-                                            filter_func=filter_func, set_names=args.set_names, tautomerize=args.tautomerize,
-                                            n_iterations=args.n_iterations)
+                                            filter_func=filter_func, set_names=args.set_names, make_cycle=args.make_cycle,
+                                            ring_size=ring_size, ring_closures=not args.extended_ring_closures,
+                                            tautomerize=args.tautomerize, n_iterations=args.n_iterations)
             make_docking = True
 
             if not res:
